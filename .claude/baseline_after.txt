@@ -1,0 +1,7 @@
+love_relationships   auspicious= 42 favorable= 77 best_avail= 67 excluded=179  time=1.01s
+travel               auspicious= 42 favorable= 67 best_avail= 44 excluded=212  time=1.32s
+business_career      auspicious= 60 favorable= 68 best_avail= 51 excluded=186  time=1.16s
+health_body          auspicious= 86 favorable= 66 best_avail= 50 excluded=163  time=1.20s
+spiritual_learning   auspicious= 48 favorable= 61 best_avail= 39 excluded=217  time=0.99s
+home_family          auspicious= 55 favorable= 16 best_avail=161 excluded=133  time=1.10s
+total time: 6.81 s

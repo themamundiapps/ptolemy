@@ -1,0 +1,9 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pyswisseph==2.10.3.2
+pydantic==2.10.4
+geopy==2.4.1
+timezonefinder==6.5.7
+pytz==2024.2
+anthropic==0.40.0
+python-dotenv==1.0.1
