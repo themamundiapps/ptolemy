@@ -634,13 +634,21 @@ class _DayTileState extends State<DayTile> {
                 style: const TextStyle(color: AppColors.bodyText, fontSize: 13),
               ),
             ),
-            if (_favorableRulerText != null) ...[
+            if (_favorableRulerPlanet != null) ...[
               const SizedBox(height: 2),
               Padding(
                 padding: const EdgeInsets.only(left: 28),
-                child: Text(
-                  _favorableRulerText!,
-                  style: const TextStyle(color: AppColors.gold, fontSize: 11, fontStyle: FontStyle.italic),
+                child: Text.rich(
+                  TextSpan(
+                    style: const TextStyle(color: AppColors.gold, fontSize: 11, fontStyle: FontStyle.italic),
+                    children: [
+                      TextSpan(
+                        text: planetSymbols[_favorableRulerPlanet] ?? '',
+                        style: const TextStyle(fontFamily: astronomiconFontFamily),
+                      ),
+                      TextSpan(text: ' Ruled by $_favorableRulerPlanet'),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -697,15 +705,12 @@ class _DayTileState extends State<DayTile> {
     return symbol.isEmpty ? label : '$symbol $label';
   }
 
-  /// "[symbol] Ruled by [Planet]" when this day's weekday ruler is
-  /// favorable for the current theme, otherwise null (nothing shown).
-  String? get _favorableRulerText {
+  /// This day's weekday ruler planet, when favorable for the current theme
+  /// (shown as "[symbol] Ruled by [Planet]"), otherwise null (nothing shown).
+  String? get _favorableRulerPlanet {
     final parts = widget.day.date.split('-').map(int.parse).toList();
     final date = DateTime(parts[0], parts[1], parts[2]);
-    final planet = favorableRulerFor(widget.themeKey, date);
-    if (planet == null) return null;
-    final symbol = planetSymbols[planet] ?? '';
-    return '$symbol Ruled by $planet';
+    return favorableRulerFor(widget.themeKey, date);
   }
 
   /// Splits the day's hits into two labeled groups *before* merging
@@ -741,7 +746,12 @@ class _DayTileState extends State<DayTile> {
     // "The Sun"/"The Moon" per traditional usage; other planets take no article.
     final subject = (hit.planet == 'Sun' || hit.planet == 'Moon') ? 'The ${hit.planet}' : hit.planet;
     final article = 'aeiou'.contains(hit.aspect[0].toLowerCase()) ? 'an' : 'a';
-    final sentence = '$subject forms $article ${hit.aspect} ($symbol) with your House ${hit.house} — ${hit.houseName}';
+    // Split around the symbol rather than one interpolated string -- the
+    // symbol needs its own TextSpan with the Astronomicon font family, and
+    // that font remaps plain Latin letters too, so it can't be applied to
+    // the whole sentence.
+    final sentencePrefix = '$subject forms $article ${hit.aspect} (';
+    final sentenceSuffix = ') with your House ${hit.house} — ${hit.houseName}';
     final indicator = qualityIndicatorFor(hit);
 
     return Padding(
@@ -761,9 +771,15 @@ class _DayTileState extends State<DayTile> {
                       const SizedBox(width: 6),
                     ],
                     Expanded(
-                      child: Text(
-                        sentence,
-                        style: const TextStyle(color: AppColors.bodyText, fontSize: 13, height: 1.35),
+                      child: Text.rich(
+                        TextSpan(
+                          style: const TextStyle(color: AppColors.bodyText, fontSize: 13, height: 1.35),
+                          children: [
+                            TextSpan(text: sentencePrefix),
+                            TextSpan(text: symbol, style: const TextStyle(fontFamily: astronomiconFontFamily)),
+                            TextSpan(text: sentenceSuffix),
+                          ],
+                        ),
                       ),
                     ),
                   ],

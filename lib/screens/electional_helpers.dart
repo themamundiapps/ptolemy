@@ -53,22 +53,34 @@ const Map<String, Set<int>> favorableWeekdaysByTheme = {
   'home_family': {DateTime.monday, DateTime.friday},
 };
 
+/// Astronomicon (bundled as an app asset -- see pubspec.yaml, and
+/// lib/widgets/chart_wheel.dart for the original mapping and how it was
+/// verified) supplies these glyphs so they render identically on every
+/// device instead of depending on each platform's system font for Unicode
+/// astrological symbols. Astronomicon maps each glyph onto a plain Latin
+/// letter/punctuation codepoint rather than the actual Unicode astrological
+/// codepoint -- any Text showing one of these MUST scope the font family to
+/// just that character (e.g. via a separate TextSpan), never to a whole
+/// string that also contains ordinary English text, or the font will remap
+/// those letters into unrelated glyphs too.
+const astronomiconFontFamily = 'Astronomicon';
+
 const Map<String, String> planetSymbols = {
-  'Sun': '☉',
-  'Moon': '☽',
-  'Mercury': '☿',
-  'Venus': '♀',
-  'Mars': '♂',
-  'Jupiter': '♃',
-  'Saturn': '♄',
+  'Sun': 'Q',
+  'Moon': 'R',
+  'Mercury': 'S',
+  'Venus': 'T',
+  'Mars': 'U',
+  'Jupiter': 'V',
+  'Saturn': 'W',
 };
 
 const Map<String, String> aspectSymbols = {
-  'conjunction': '☌',
-  'sextile': '⚹',
-  'square': '□',
-  'trine': '△',
-  'opposition': '☍',
+  'conjunction': '!',
+  'sextile': '%',
+  'square': '#',
+  'trine': r'$',
+  'opposition': '"',
 };
 
 /// Returns the ruling planet's name if [date]'s weekday is favorable for
