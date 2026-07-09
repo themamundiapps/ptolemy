@@ -5,11 +5,15 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_SIGNS_FILE = _PROJECT_ROOT / "ptolemy-planets-in-signs.md"
-_HOUSES_FILE = _PROJECT_ROOT / "ptolemy-planets-in-houses.md"
-_ASPECTS_FILE = _PROJECT_ROOT / "ptolemy-aspects.md"
-_ASPECTS_EXTENDED_FILE = _PROJECT_ROOT / "ptolemy-aspects-extended.md"
+# Relative to the backend/ directory itself (not the repo root) -- Railway's
+# build is scoped to backend/ (its configured root directory), so a path that
+# reached above it via one more ".parent" would resolve to files that were
+# never uploaded and silently fail to be found in production.
+_CONTENT_DIR = Path(__file__).resolve().parent.parent.parent / "content"
+_SIGNS_FILE = _CONTENT_DIR / "ptolemy-planets-in-signs.md"
+_HOUSES_FILE = _CONTENT_DIR / "ptolemy-planets-in-houses.md"
+_ASPECTS_FILE = _CONTENT_DIR / "ptolemy-aspects.md"
+_ASPECTS_EXTENDED_FILE = _CONTENT_DIR / "ptolemy-aspects-extended.md"
 
 _SIGN_HEADER = re.compile(r"^\*\*.+ IN ([A-Z]+)\*\*$")
 _HOUSE_HEADER = re.compile(r"^\*\*.+ IN HOUSE (\d+)\*\*$")
