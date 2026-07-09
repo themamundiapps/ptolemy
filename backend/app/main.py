@@ -8,19 +8,33 @@ from app.routers import chart, electional, geocode, interpretations, temperament
 app = FastAPI(title="Ptolemy API", version="0.1.0")
 
 # The Android/iOS/Windows app talks to this API via native HTTP, which is
-# never subject to browser CORS enforcement -- only a Flutter *web* build
-# would hit this. Default to local dev origins; set ALLOWED_ORIGINS on
-# Railway (comma-separated) once a web build is deployed somewhere.
+# never subject to browser CORS enforcement -- only the Flutter *web* build
+# (hosted on Vercel) hits this. Default list covers the production domain
+# and local web dev; set ALLOWED_ORIGINS on Railway (comma-separated) to
+# override/extend it, e.g. once a custom domain is added.
 _allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 _allow_origins = (
     [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
     if _allowed_origins_env
-    else ["http://localhost:8000", "http://127.0.0.1:8000"]
+    else [
+        "https://ptolemy.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
 )
+
+# Vercel preview deployments get a unique *.vercel.app subdomain per branch/
+# PR, so they can't be listed as fixed origins. CORSMiddleware's allow_origins
+# only does exact string matches -- a literal "https://*.vercel.app" entry
+# would never match a real Origin header -- so preview subdomains need the
+# regex parameter instead. Overridable via ALLOWED_ORIGIN_REGEX on Railway.
+_allow_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allow_origins,
+    allow_origin_regex=_allow_origin_regex,
     allow_methods=["*"],
     allow_headers=["*"],
 )
