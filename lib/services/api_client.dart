@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/birth_data.dart';
@@ -9,16 +8,12 @@ import '../models/chart_models.dart';
 
 /// Default backend URL for the platform this app is running on.
 ///
-/// The Android emulator cannot reach the host machine via `localhost` —
-/// `10.0.2.2` is the special alias it provides for that. A physical device
-/// needs the host machine's LAN IP instead, which the user can override in
-/// the UI.
+/// Points at the production API on Railway over HTTPS. Every request in
+/// [ApiClient] is built by interpolating this value, so keeping it a single
+/// `https://` origin here is enough to guarantee the whole app talks to the
+/// backend over HTTPS.
 String defaultBaseUrl() {
-  if (kIsWeb) return 'http://127.0.0.1:8000';
-  if (defaultTargetPlatform == TargetPlatform.android) {
-    return 'http://10.0.2.2:8000';
-  }
-  return 'http://127.0.0.1:8000';
+  return 'https://ptolemy-production.up.railway.app';
 }
 
 class ApiException implements Exception {

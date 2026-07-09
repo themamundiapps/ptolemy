@@ -179,7 +179,10 @@ class ChartWheel extends StatelessWidget {
       top: point.dy - targetSize / 2,
       width: targetSize,
       height: targetSize,
-      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap),
+      ),
     );
   }
 }
