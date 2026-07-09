@@ -7,23 +7,29 @@ import '../theme.dart';
 
 const _planetOrder = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'];
 
-// Sun is drawn by hand (see _drawPlanetGlyph) since its Unicode glyph isn't
-// covered by every platform's fallback font. The rest render fine as text.
+/// Astronomicon (bundled as an app asset -- see pubspec.yaml) maps each
+/// glyph onto a plain Latin letter codepoint rather than the actual Unicode
+/// astrological codepoint, so these are the font's own private mapping, not
+/// arbitrary substitutions. Confirmed against astronomicon.co's published
+/// character map and by rendering each character with the font directly.
+const _astronomiconFontFamily = 'Astronomicon';
+
 const _planetGlyphs = {
-  'Moon': '☽',
-  'Mercury': '☿',
-  'Venus': '♀',
-  'Mars': '♂',
-  'Jupiter': '♃',
-  'Saturn': '♄',
+  'Sun': 'Q',
+  'Moon': 'R',
+  'Mercury': 'S',
+  'Venus': 'T',
+  'Mars': 'U',
+  'Jupiter': 'V',
+  'Saturn': 'W',
 };
 
 const _lotOfFortuneKey = 'Lot of Fortune';
 const _lotOfSpiritKey = 'Lot of Spirit';
 
-const _signGlyphs = [
-  '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓',
-];
+// In ZODIAC_SIGNS order (Aries..Pisces). Capricorn uses Astronomicon's
+// "Europe" variant (J) rather than its "USA" alternative (\).
+const _signGlyphs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
 // Muted, semi-transparent element tints painted over the dark background.
 const _elementColors = [
@@ -256,6 +262,7 @@ class _ChartWheelPainter extends CustomPainter {
         pointOnWheel(center, (outer + inner) / 2, relStart + 15),
         color: AppColors.bodyText,
         fontSize: 22,
+        fontFamily: _astronomiconFontFamily,
       );
     }
 
@@ -403,23 +410,10 @@ class _ChartWheelPainter extends CustomPainter {
     }
   }
 
-  /// The Sun's Unicode glyph (☉) isn't covered by every platform's fallback
-  /// font and can render as a missing-glyph box, so it's hand-drawn instead.
-  /// Every other planet still renders as plain Unicode text, unchanged.
   void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color) {
-    if (name == 'Sun') {
-      final paint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round;
-      canvas.drawCircle(center, 8, paint);
-      canvas.drawCircle(center, 8 * 0.22, Paint()..color = color);
-      return;
-    }
     final glyph = _planetGlyphs[name];
     if (glyph == null) return;
-    _drawText(canvas, glyph, center, color: color, fontSize: 34);
+    _drawText(canvas, glyph, center, color: color, fontSize: 34, fontFamily: _astronomiconFontFamily);
   }
 
   void _drawTick(Canvas canvas, Offset center, double ringInner, WheelPlacement placement) {
@@ -494,11 +488,17 @@ class _ChartWheelPainter extends CustomPainter {
     required Color color,
     required double fontSize,
     bool bold = false,
+    String? fontFamily,
   }) {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(color: color, fontSize: fontSize, fontWeight: bold ? FontWeight.bold : FontWeight.normal),
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+          fontFamily: fontFamily,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
