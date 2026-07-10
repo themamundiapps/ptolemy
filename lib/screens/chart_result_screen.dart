@@ -163,12 +163,20 @@ class _ChartTab extends StatelessWidget {
   }
 }
 
+/// Astronomicon (bundled as an app asset -- see pubspec.yaml, and
+/// lib/widgets/chart_wheel.dart for the original mapping and how it was
+/// verified) maps each glyph onto a plain Latin letter/punctuation codepoint
+/// rather than the actual Unicode astrological codepoint -- any Text showing
+/// one of these MUST scope the font family to just that character, never to
+/// a whole string that also contains ordinary English text.
+const _astronomiconFontFamily = 'Astronomicon';
+
 const _aspectSymbols = {
-  'conjunction': '☌',
-  'sextile': '⚹',
-  'square': '□',
-  'trine': '△',
-  'opposition': '☍',
+  'conjunction': '!',
+  'sextile': '%',
+  'square': '#',
+  'trine': r'$',
+  'opposition': '"',
 };
 
 const _nameColor = Color(0xFFE8E8E8);
@@ -198,7 +206,11 @@ class _AspectRow extends StatelessWidget {
               child: Text(
                 symbol,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.gold, fontSize: 22),
+                style: const TextStyle(
+                  color: AppColors.gold,
+                  fontSize: 22,
+                  fontFamily: _astronomiconFontFamily,
+                ),
               ),
             ),
             Expanded(child: Text(aspect.planetB, style: nameStyle, textAlign: TextAlign.right)),

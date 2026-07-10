@@ -4,12 +4,21 @@ import '../models/chart_models.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
 
+/// Astronomicon (bundled as an app asset -- see pubspec.yaml, and
+/// lib/widgets/chart_wheel.dart for the original mapping and how it was
+/// verified) maps each glyph onto a plain Latin letter/punctuation codepoint
+/// rather than the actual Unicode astrological codepoint -- any Text showing
+/// one of these MUST scope the font family to just that character, never to
+/// a whole string that also contains ordinary English text, or the font will
+/// remap those letters into unrelated glyphs too.
+const _astronomiconFontFamily = 'Astronomicon';
+
 const _aspectSymbols = {
-  'conjunction': '☌',
-  'sextile': '⚹',
-  'square': '□',
-  'trine': '△',
-  'opposition': '☍',
+  'conjunction': '!',
+  'sextile': '%',
+  'square': '#',
+  'trine': r'$',
+  'opposition': '"',
 };
 
 /// One-line introduction preceding the base interpretation, varying by
@@ -85,9 +94,15 @@ void showAspectDetailSheet(
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              '${aspect.planetA} $symbol ${aspect.planetB}',
-              style: Theme.of(context).textTheme.headlineMedium,
+            Text.rich(
+              TextSpan(
+                style: Theme.of(context).textTheme.headlineMedium,
+                children: [
+                  TextSpan(text: '${aspect.planetA} '),
+                  TextSpan(text: symbol, style: const TextStyle(fontFamily: _astronomiconFontFamily)),
+                  TextSpan(text: ' ${aspect.planetB}'),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             if (lotText != null)
