@@ -57,6 +57,20 @@ class ChartResponse(BaseModel):
     aspects: list[Aspect]
 
 
+class HouseLordEntry(BaseModel):
+    house_number: int
+    sign: str
+    lord: str
+    lord_house: int
+    lord_sign: str
+    lord_dignity: str | None = None
+    interpretation_key: str
+
+
+class HouseLordsResponse(BaseModel):
+    entries: list[HouseLordEntry]
+
+
 class InterpretationResponse(BaseModel):
     body: str
     citation: str

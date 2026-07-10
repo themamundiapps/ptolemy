@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../widgets/aspect_detail_sheet.dart';
 import '../widgets/chart_wheel.dart';
 import '../widgets/connectivity_banner.dart';
+import '../widgets/house_lord_detail_sheet.dart';
 import '../widgets/lot_detail_sheet.dart';
 import '../widgets/planet_detail_sheet.dart';
 import 'electional_tab.dart';
@@ -38,6 +39,14 @@ void _showAspectDetails(BuildContext context, Aspect aspect) {
     context,
     apiClient: ApiClient(baseUrl: defaultBaseUrl()),
     aspect: aspect,
+  );
+}
+
+void _showHouseLordDetails(BuildContext context, HouseLordEntry entry) {
+  showHouseLordDetailSheet(
+    context,
+    apiClient: ApiClient(baseUrl: defaultBaseUrl()),
+    entry: entry,
   );
 }
 
@@ -83,7 +92,13 @@ class ChartResultScreen extends StatelessWidget {
             Expanded(
               child: TabBarView(
                 children: [
-                  _ChartTab(result: result),
+                  _ChartTab(
+                    result: result,
+                    birthDate: birthDate,
+                    birthTime: birthTime,
+                    latitude: latitude,
+                    longitude: longitude,
+                  ),
                   ElectionalTab(
                     result: result,
                     birthDate: birthDate,
@@ -108,12 +123,45 @@ class ChartResultScreen extends StatelessWidget {
   }
 }
 
-class _ChartTab extends StatelessWidget {
+class _ChartTab extends StatefulWidget {
   final ChartResponse result;
+  final String birthDate;
+  final String birthTime;
+  final double latitude;
+  final double longitude;
 
-  const _ChartTab({required this.result});
+  const _ChartTab({
+    required this.result,
+    required this.birthDate,
+    required this.birthTime,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  @override
+  State<_ChartTab> createState() => _ChartTabState();
+}
+
+class _ChartTabState extends State<_ChartTab> {
+  late final Future<List<HouseLordEntry>> _houseLordsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    // Reuses the chart's already-resolved UTC offset (same approach as
+    // TemperamentTab) rather than re-resolving it, so this can't disagree
+    // with the rest of the chart over which offset applies.
+    _houseLordsFuture = ApiClient(baseUrl: defaultBaseUrl()).fetchHouseLords(
+      date: widget.birthDate,
+      time: widget.birthTime,
+      latitude: widget.latitude,
+      longitude: widget.longitude,
+      tzOffset: widget.result.utcOffsetUsed,
+    );
+  }
 
   String _timezoneLabel() {
+    final result = widget.result;
     final sign = result.utcOffsetUsed >= 0 ? '+' : '';
     final offset = 'UTC$sign${result.utcOffsetUsed}';
     if (result.tzSource == 'manual') return '$offset (manual override)';
@@ -123,6 +171,7 @@ class _ChartTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final result = widget.result;
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -146,19 +195,86 @@ class _ChartTab extends StatelessWidget {
         ..._planetOrder
             .where(result.planets.containsKey)
             .map((name) => _PlanetRow(result: result, name: name, position: result.planets[name]!)),
-        const SizedBox(height: 16),
-        Text('Lots', style: theme.textTheme.titleMedium),
-        const Divider(height: 20),
-        _LotRow(label: 'Lot of Fortune', lotKey: 'fortune', position: result.lotOfFortune),
-        _LotRow(label: 'Lot of Spirit', lotKey: 'spirit', position: result.lotOfSpirit),
-        const SizedBox(height: 16),
-        Text('Aspects', style: theme.textTheme.titleMedium),
-        const Divider(height: 20),
-        if (result.aspects.isEmpty)
-          const Text('No major aspects within orb.', style: TextStyle(color: AppColors.mutedText))
-        else
-          ...result.aspects.map((a) => _AspectRow(aspect: a)),
+        const SizedBox(height: 8),
+        _CollapsibleSection(
+          title: 'Lots',
+          children: [
+            _LotRow(label: 'Lot of Fortune', lotKey: 'fortune', position: result.lotOfFortune),
+            _LotRow(label: 'Lot of Spirit', lotKey: 'spirit', position: result.lotOfSpirit),
+          ],
+        ),
+        _CollapsibleSection(
+          title: 'Aspects',
+          children: [
+            if (result.aspects.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text('No major aspects within orb.', style: TextStyle(color: AppColors.mutedText)),
+              )
+            else
+              ...result.aspects.map((a) => _AspectRow(aspect: a)),
+          ],
+        ),
+        _CollapsibleSection(
+          title: 'House Lords',
+          children: [
+            FutureBuilder<List<HouseLordEntry>>(
+              future: _houseLordsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator(color: AppColors.gold, strokeWidth: 2)),
+                  );
+                }
+                if (snapshot.hasError || !snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('House lords unavailable.', style: TextStyle(color: AppColors.mutedText)),
+                  );
+                }
+                return Column(
+                  children: snapshot.data!
+                      .map(
+                        (entry) => _HouseLordRow(
+                          entry: entry,
+                          onTap: () => _showHouseLordDetails(context, entry),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ],
+        ),
       ],
+    );
+  }
+}
+
+/// Collapsed-by-default section used for Lots, Aspects, and House Lords
+/// (unlike Planets, which stays always visible above these). Strips
+/// ExpansionTile's default top/bottom divider borders via [shape]/
+/// [collapsedShape] so it reads as part of the same plain list rather than
+/// a bordered card.
+class _CollapsibleSection extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _CollapsibleSection({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      initiallyExpanded: false,
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      iconColor: AppColors.gold,
+      collapsedIconColor: AppColors.gold,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      children: children,
     );
   }
 }
@@ -249,6 +365,39 @@ class _PlanetRow extends StatelessWidget {
             ),
             if (dignityLabel.isNotEmpty)
               Text(dignityLabel, style: const TextStyle(color: AppColors.gold, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HouseLordRow extends StatelessWidget {
+  final HouseLordEntry entry;
+  final VoidCallback onTap;
+
+  const _HouseLordRow({required this.entry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final dignity = entry.lordDignity;
+    final dignityLabel = dignity == null ? '' : dignity[0].toUpperCase() + dignity.substring(1);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 84,
+              child: Text('House ${entry.houseNumber}', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            Expanded(
+              child: Text('${entry.lord} → House ${entry.lordHouse}', style: const TextStyle(color: _nameColor)),
+            ),
+            if (dignityLabel.isNotEmpty)
+              Text(dignityLabel, style: const TextStyle(color: AppColors.mutedGold, fontSize: 12)),
           ],
         ),
       ),

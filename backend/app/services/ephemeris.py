@@ -57,6 +57,14 @@ def whole_sign_house(longitude: float, asc_longitude: float) -> int:
     return (body_sign - asc_sign) % 12 + 1
 
 
+def house_sign(house_number: int, asc_longitude: float) -> str:
+    """The sign occupying a given whole-sign house -- the inverse of
+    whole_sign_house(): house 1 is the Ascendant's own sign, house 2 the
+    next sign along, etc."""
+    asc_sign = int((asc_longitude % 360.0) // 30)
+    return ZODIAC_SIGNS[(asc_sign + house_number - 1) % 12]
+
+
 def calc_angles(jd_ut: float, latitude: float, longitude: float) -> tuple[float, float]:
     """Returns (Ascendant, Midheaven) ecliptic longitudes.
 
@@ -131,6 +139,31 @@ def essential_dignities(planet: str, sign: str) -> list[str]:
     """Returns every dignity (domicile/exaltation/detriment/fall) the planet holds in this sign."""
     table = ESSENTIAL_DIGNITIES[planet]
     return [dignity for dignity, signs in table.items() if sign in signs]
+
+
+# Traditional domicile ruler of each sign (7 classical planets only -- no
+# modern outer-planet rulerships). Doubles as the inverse of
+# ESSENTIAL_DIGNITIES' "domicile" entries, kept as its own direct sign->planet
+# table since house-lord calculation looks it up by sign far more often than
+# essential_dignities() looks it up by planet.
+SIGN_RULERS = {
+    "Aries": "Mars",
+    "Taurus": "Venus",
+    "Gemini": "Mercury",
+    "Cancer": "Moon",
+    "Leo": "Sun",
+    "Virgo": "Mercury",
+    "Libra": "Venus",
+    "Scorpio": "Mars",
+    "Sagittarius": "Jupiter",
+    "Capricorn": "Saturn",
+    "Aquarius": "Saturn",
+    "Pisces": "Jupiter",
+}
+
+
+def sign_ruler(sign: str) -> str:
+    return SIGN_RULERS[sign]
 
 
 # Major aspects and the angle (in degrees) each represents.

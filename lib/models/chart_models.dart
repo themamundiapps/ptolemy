@@ -144,6 +144,38 @@ class ChartResponse {
   };
 }
 
+class HouseLordEntry {
+  final int houseNumber;
+  final String sign;
+  final String lord;
+  final int lordHouse;
+  final String lordSign;
+  final String? lordDignity;
+  final String interpretationKey;
+
+  HouseLordEntry({
+    required this.houseNumber,
+    required this.sign,
+    required this.lord,
+    required this.lordHouse,
+    required this.lordSign,
+    required this.lordDignity,
+    required this.interpretationKey,
+  });
+
+  factory HouseLordEntry.fromJson(Map<String, dynamic> json) {
+    return HouseLordEntry(
+      houseNumber: json['house_number'] as int,
+      sign: json['sign'] as String,
+      lord: json['lord'] as String,
+      lordHouse: json['lord_house'] as int,
+      lordSign: json['lord_sign'] as String,
+      lordDignity: json['lord_dignity'] as String?,
+      interpretationKey: json['interpretation_key'] as String,
+    );
+  }
+}
+
 class CityResult {
   final String name;
   final double latitude;

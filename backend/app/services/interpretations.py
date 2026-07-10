@@ -14,6 +14,7 @@ _SIGNS_FILE = _CONTENT_DIR / "ptolemy-planets-in-signs.md"
 _HOUSES_FILE = _CONTENT_DIR / "ptolemy-planets-in-houses.md"
 _ASPECTS_FILE = _CONTENT_DIR / "ptolemy-aspects.md"
 _ASPECTS_EXTENDED_FILE = _CONTENT_DIR / "ptolemy-aspects-extended.md"
+_HOUSE_LORDS_FILE = _CONTENT_DIR / "ptolemy-house-lords.md"
 
 _SIGN_HEADER = re.compile(r"^\*\*.+ IN ([A-Z]+)\*\*$")
 _HOUSE_HEADER = re.compile(r"^\*\*.+ IN HOUSE (\d+)\*\*$")
@@ -22,6 +23,8 @@ _ASPECT_PAIR_HEADER = re.compile(r"^\*\*(.+?) — (.+?)\*\*$")
 _ASPECT_SPECIFIC_HEADER = re.compile(r"^\*\*(.+?) ([☌⚹□△☍]) (.+?)\*\*$")
 _QUOTE_LINE = re.compile(r'^\*"(.+)"\*$')
 _CITATION_LINE = re.compile(r"^— (.+)$")
+_HOUSE_LORD_ENTRY_HEADER = re.compile(r"^\*\*Lord of House (\d+) in House (\d+)\*\*$")
+_HOUSE_LORD_SECTION_HEADER = re.compile(r"^# LORD OF HOUSE \d+$")
 
 # Only square/trine/opposition are ever present in ptolemy-aspects-extended.md
 # (conjunction and sextile always use the base pair text) -- but the map
@@ -232,6 +235,69 @@ def get_aspect_interpretation(planet_a: str, planet_b: str, aspect_type: str) ->
     if specific is not None:
         return specific
     return _aspect_pair_interpretations().get(pair_key)
+
+
+@lru_cache
+def _house_lord_interpretations() -> dict:
+    """Parses ptolemy-house-lords.md's 144 '**Lord of House X in House Y**'
+    entries. Unlike the other content files, only a representative entry per
+    house-section carries a quote/citation (37 of 144) -- the rest are a bare
+    body paragraph followed directly by the next entry or a '---' rule, with
+    no quote line to signal the end of the body. So unlike _parse()'s body
+    loop (which only stops at a quote line, safe there because every entry in
+    those files has one), this loop must also stop at the next entry header,
+    the next section header, or a '---' rule.
+    """
+    lines = _HOUSE_LORDS_FILE.read_text(encoding="utf-8").splitlines()
+    results: dict = {}
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        header_match = _HOUSE_LORD_ENTRY_HEADER.match(line)
+        if not header_match:
+            i += 1
+            continue
+
+        from_house = int(header_match.group(1))
+        to_house = int(header_match.group(2))
+        i += 1
+
+        body_lines = []
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if (
+                stripped == "---"
+                or _QUOTE_LINE.match(stripped)
+                or _HOUSE_LORD_ENTRY_HEADER.match(stripped)
+                or _HOUSE_LORD_SECTION_HEADER.match(stripped)
+            ):
+                break
+            if stripped:
+                body_lines.append(stripped)
+            i += 1
+        body = " ".join(body_lines).strip()
+
+        citation = ""
+        if i < len(lines) and _QUOTE_LINE.match(lines[i].strip()):
+            quote_match = _QUOTE_LINE.match(lines[i].strip())
+            quote_text = quote_match.group(1)
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i < len(lines):
+                citation_match = _CITATION_LINE.match(lines[i].strip())
+                if citation_match:
+                    citation = f'"{quote_text}" — {citation_match.group(1)}'
+                    i += 1
+
+        results[(from_house, to_house)] = Interpretation(body, citation)
+
+    return results
+
+
+def get_house_lord_interpretation(from_house: int, to_house: int) -> Interpretation | None:
+    return _house_lord_interpretations().get((from_house, to_house))
 
 
 # No dedicated content file for the Lots — general traditional descriptions,

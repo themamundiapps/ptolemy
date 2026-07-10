@@ -158,6 +158,51 @@ class ApiClient {
     return ElectionalResult.fromJson(_decodeJson(response));
   }
 
+  Future<List<HouseLordEntry>> fetchHouseLords({
+    required String date,
+    required String time,
+    required double latitude,
+    required double longitude,
+    double? tzOffset,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/v1/chart/house-lords');
+
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'date': date,
+              'time': time,
+              'latitude': latitude,
+              'longitude': longitude,
+              if (tzOffset != null) 'tz_offset': tzOffset,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      throw ApiException('Could not reach backend at $baseUrl: $e');
+    }
+
+    if (response.statusCode != 200) {
+      throw ApiException('Backend error (${response.statusCode}): ${response.body}');
+    }
+
+    final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    return (json['entries'] as List)
+        .map((e) => HouseLordEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Interpretation> fetchHouseLordInterpretation({required int fromHouse, required int toHouse}) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/v1/interpretations/house-lord',
+    ).replace(queryParameters: {'from_house': '$fromHouse', 'to_house': '$toHouse'});
+    return Interpretation.fromJson(await _get(uri));
+  }
+
   Future<List<CityResult>> searchCities(String query) async {
     final uri = Uri.parse('$baseUrl/api/v1/geocode/search').replace(queryParameters: {'q': query});
 

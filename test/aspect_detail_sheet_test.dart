@@ -61,34 +61,37 @@ void main() {
     testWidgets('Lot pair header still shows both names and the symbol', (tester) async {
       await openSheet(tester, _aspect(planetA: 'Lot of Fortune', planetB: 'Sun', aspect: 'trine'));
       await tester.pumpAndSettle();
-      expect(find.text('Lot of Fortune △ Sun'), findsOneWidget);
+      // find.text() flattens Text.rich's TextSpan tree to plain text, so this
+      // matches the Astronomicon-mapped letter ('$' for trine -- see
+      // aspect_detail_sheet.dart's _aspectSymbols), not the Unicode glyph.
+      expect(find.text(r'Lot of Fortune $ Sun'), findsOneWidget);
     });
   });
 
   group('Header', () {
     testWidgets('shows "PlanetA symbol PlanetB" in the example format', (tester) async {
       await openSheet(tester, _aspect(planetA: 'Venus', planetB: 'Saturn', aspect: 'trine'));
-      expect(find.text('Venus △ Saturn'), findsOneWidget);
+      expect(find.text(r'Venus $ Saturn'), findsOneWidget);
     });
 
     testWidgets('uses the conjunction glyph', (tester) async {
       await openSheet(tester, _aspect(aspect: 'conjunction'));
-      expect(find.text('Venus ☌ Saturn'), findsOneWidget);
+      expect(find.text('Venus ! Saturn'), findsOneWidget);
     });
 
     testWidgets('uses the sextile glyph', (tester) async {
       await openSheet(tester, _aspect(aspect: 'sextile'));
-      expect(find.text('Venus ⚹ Saturn'), findsOneWidget);
+      expect(find.text('Venus % Saturn'), findsOneWidget);
     });
 
     testWidgets('uses the square glyph', (tester) async {
       await openSheet(tester, _aspect(aspect: 'square'));
-      expect(find.text('Venus □ Saturn'), findsOneWidget);
+      expect(find.text('Venus # Saturn'), findsOneWidget);
     });
 
     testWidgets('uses the opposition glyph', (tester) async {
       await openSheet(tester, _aspect(aspect: 'opposition'));
-      expect(find.text('Venus ☍ Saturn'), findsOneWidget);
+      expect(find.text('Venus " Saturn'), findsOneWidget);
     });
   });
 

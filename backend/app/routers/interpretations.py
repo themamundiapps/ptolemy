@@ -32,6 +32,17 @@ def lot(
     return InterpretationResponse(body=result.body, citation=result.citation)
 
 
+@router.get("/house-lord", response_model=InterpretationResponse)
+def house_lord(
+    from_house: int = Query(..., ge=1, le=12),
+    to_house: int = Query(..., ge=1, le=12),
+) -> InterpretationResponse:
+    result = interpretations.get_house_lord_interpretation(from_house, to_house)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No interpretation for lord of house {from_house} in house {to_house}")
+    return InterpretationResponse(body=result.body, citation=result.citation)
+
+
 @router.get("/aspect", response_model=InterpretationResponse)
 def aspect(
     planet_a: str = Query(...),

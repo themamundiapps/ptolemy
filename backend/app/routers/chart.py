@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import Aspect, ChartRequest, ChartResponse, ZodiacPosition
+from app.models.schemas import Aspect, ChartRequest, ChartResponse, HouseLordEntry, HouseLordsResponse, ZodiacPosition
 from app.services import ephemeris, timezone as tz_resolver
 
 router = APIRouter(prefix="/chart", tags=["chart"])
@@ -100,3 +100,48 @@ def get_positions(request: ChartRequest) -> ChartResponse:
         lot_of_spirit=lot_of_spirit,
         aspects=aspects,
     )
+
+
+@router.post("/house-lords", response_model=HouseLordsResponse)
+def get_house_lords(request: ChartRequest) -> HouseLordsResponse:
+    if request.tz_offset is not None:
+        tz_offset = request.tz_offset
+    else:
+        try:
+            _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(
+                request.latitude, request.longitude, request.date, request.time
+            )
+        except tz_resolver.TimezoneLookupError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    jd_ut = ephemeris.julian_day_ut(request.date, request.time, tz_offset)
+    asc_lon, _mc_lon = ephemeris.calc_angles(jd_ut, request.latitude, request.longitude)
+
+    planet_houses: dict[str, int] = {}
+    planet_signs: dict[str, str] = {}
+    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
+        lon, _retrograde = ephemeris.calc_planet(jd_ut, body_id)
+        sign, _deg = ephemeris.sign_and_degree(lon)
+        planet_signs[name] = sign
+        planet_houses[name] = ephemeris.whole_sign_house(lon, asc_lon)
+
+    entries = []
+    for house_number in range(1, 13):
+        sign = ephemeris.house_sign(house_number, asc_lon)
+        lord = ephemeris.sign_ruler(sign)
+        lord_house = planet_houses[lord]
+        lord_sign = planet_signs[lord]
+        dignities = ephemeris.essential_dignities(lord, lord_sign)
+        entries.append(
+            HouseLordEntry(
+                house_number=house_number,
+                sign=sign,
+                lord=lord,
+                lord_house=lord_house,
+                lord_sign=lord_sign,
+                lord_dignity=dignities[0] if dignities else None,
+                interpretation_key=f"lord_{house_number}_in_{lord_house}",
+            )
+        )
+
+    return HouseLordsResponse(entries=entries)
