@@ -461,6 +461,9 @@ class ResultsList extends StatelessWidget {
     final syntheses = [
       for (final day in result.days) buildSynthesis(day.hits, day.qualityLabel, usageCounts),
     ];
+    final contextLines = [
+      for (final day in result.days) buildContextualAwareness(day.hits, day.qualityLabel),
+    ];
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -498,6 +501,7 @@ class ResultsList extends StatelessWidget {
             day: result.days[i],
             themeKey: themeKey,
             synthesis: syntheses[i],
+            contextLine: contextLines[i],
           ),
         const SizedBox(height: 20),
         const Text(
@@ -572,12 +576,14 @@ class DayTile extends StatefulWidget {
   final ElectionalDay day;
   final String themeKey;
   final String synthesis;
+  final String? contextLine;
 
   const DayTile({
     required this.rank,
     required this.day,
     required this.themeKey,
     required this.synthesis,
+    this.contextLine,
     super.key,
   });
 
@@ -671,6 +677,18 @@ class _DayTileState extends State<DayTile> {
                 widget.synthesis,
                 style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.5),
               ),
+              if (widget.contextLine != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  widget.contextLine!,
+                  style: const TextStyle(
+                    color: AppColors.mutedGold,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    height: 1.4,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               InkWell(
                 onTap: () => setState(() => _detailsExpanded = !_detailsExpanded),

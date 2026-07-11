@@ -522,3 +522,39 @@ String buildSynthesis(
   final closing = closingVariants == null ? '' : _nextVariant('closing-$qualitativeLabel', closingVariants, usageCounts);
   return [...sentences, closing].where((s) => s.isNotEmpty).join(' ');
 }
+
+bool _isHarmonious(String aspect) => aspect == 'trine' || aspect == 'sextile';
+
+/// A single line of contextual awareness about Mars/Saturn's presence,
+/// shown beneath the main synthesis paragraph — never as part of it. Only
+/// returned when a benefic (Venus or Jupiter) harmonious aspect is actually
+/// what earned the day its Favorable/Auspicious label (isSupporting),
+/// so the line reads as added nuance to a genuinely positive result rather
+/// than a contradiction. A "Best Available" day never gets this line, since
+/// there's no positive result yet to add nuance to.
+String? buildContextualAwareness(List<ElectionalHit> hits, String qualitativeLabel) {
+  if (qualitativeLabel == 'Best Available') return null;
+
+  final hasSupportingBenefic = hits.any(
+    (h) =>
+        h.mode == 'direct' &&
+        h.isSupporting &&
+        (h.planet == 'Venus' || h.planet == 'Jupiter') &&
+        (h.aspect == 'trine' || h.aspect == 'sextile' || h.aspect == 'conjunction'),
+  );
+  if (!hasSupportingBenefic) return null;
+
+  final marsHarmonious = hits.any((h) => h.mode == 'direct' && h.planet == 'Mars' && _isHarmonious(h.aspect));
+  final saturnHarmonious = hits.any((h) => h.mode == 'direct' && h.planet == 'Saturn' && _isHarmonious(h.aspect));
+
+  if (marsHarmonious && saturnHarmonious) {
+    return 'Both Mars and Saturn aspect key houses alongside the benefics — this moment rewards deliberate, focused action rather than impulse.';
+  }
+  if (marsHarmonious) {
+    return 'Mars also aspects key houses at this time — the energy is present but well-directed. Act with focus and intention.';
+  }
+  if (saturnHarmonious) {
+    return 'Saturn also aspects key houses at this time — this moment favors serious commitment over casual engagement.';
+  }
+  return null;
+}

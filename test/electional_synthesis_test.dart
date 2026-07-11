@@ -133,4 +133,68 @@ void main() {
       expect(text.toLowerCase(), contains('hidden sympathy'));
     });
   });
+
+  group('buildContextualAwareness', () {
+    test('never appears for a Best Available day, even with Mars/benefic hits present', () {
+      final hits = [
+        hit(planet: 'Venus', house: 5, aspect: 'trine', isSupporting: true),
+        hit(planet: 'Mars', house: 5, aspect: 'trine'),
+      ];
+      expect(buildContextualAwareness(hits, 'Best Available'), isNull);
+    });
+
+    test('is null with no supporting benefic aspect, even if Mars is harmonious', () {
+      final hits = [hit(planet: 'Mars', house: 5, aspect: 'trine')];
+      expect(buildContextualAwareness(hits, 'Favorable'), isNull);
+    });
+
+    test('is null when the only benefic aspect is not the one that qualified the day', () {
+      final hits = [hit(planet: 'Venus', house: 5, aspect: 'trine', isSupporting: false)];
+      expect(buildContextualAwareness(hits, 'Favorable'), isNull);
+    });
+
+    test('is null when Mars/Saturn are present but not harmonious (e.g. square)', () {
+      final hits = [
+        hit(planet: 'Jupiter', house: 7, aspect: 'sextile', isSupporting: true),
+        hit(planet: 'Mars', house: 7, aspect: 'square'),
+      ];
+      expect(buildContextualAwareness(hits, 'Auspicious'), isNull);
+    });
+
+    test('flags Mars alone when it has a harmonious aspect alongside a supporting benefic', () {
+      final hits = [
+        hit(planet: 'Jupiter', house: 7, aspect: 'trine', isSupporting: true),
+        hit(planet: 'Mars', house: 7, aspect: 'sextile'),
+      ];
+      final text = buildContextualAwareness(hits, 'Favorable');
+      expect(text, contains('Mars also aspects'));
+    });
+
+    test('flags Saturn alone when it has a harmonious aspect alongside a supporting benefic', () {
+      final hits = [
+        hit(planet: 'Venus', house: 7, aspect: 'conjunction', isSupporting: true),
+        hit(planet: 'Saturn', house: 7, aspect: 'trine'),
+      ];
+      final text = buildContextualAwareness(hits, 'Auspicious');
+      expect(text, contains('Saturn also aspects'));
+    });
+
+    test('flags both Mars and Saturn when both are harmonious', () {
+      final hits = [
+        hit(planet: 'Venus', house: 7, aspect: 'trine', isSupporting: true),
+        hit(planet: 'Mars', house: 7, aspect: 'trine'),
+        hit(planet: 'Saturn', house: 7, aspect: 'sextile'),
+      ];
+      final text = buildContextualAwareness(hits, 'Favorable');
+      expect(text, contains('Both Mars and Saturn'));
+    });
+
+    test('ignores an antiscion Mars aspect — only direct aspects count', () {
+      final hits = [
+        hit(planet: 'Jupiter', house: 7, aspect: 'trine', isSupporting: true),
+        hit(planet: 'Mars', house: 7, aspect: 'sextile', mode: 'antiscion'),
+      ];
+      expect(buildContextualAwareness(hits, 'Favorable'), isNull);
+    });
+  });
 }
