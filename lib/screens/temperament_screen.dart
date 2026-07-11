@@ -119,30 +119,6 @@ class _TemperamentContent extends StatelessWidget {
           style: const TextStyle(color: AppColors.mutedGold, fontStyle: FontStyle.italic, fontSize: 12, height: 1.4),
         ),
         const SizedBox(height: 28),
-        Theme(
-          data: theme.copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            collapsedIconColor: AppColors.gold,
-            iconColor: AppColors.gold,
-            title: Text('How this was calculated', style: theme.textTheme.titleMedium),
-            children: [
-              const SizedBox(height: 8),
-              Text(
-                _calculationIntro,
-                style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.5),
-              ),
-              const SizedBox(height: 16),
-              ...temperament.factors.map(
-                (f) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(f.detail, style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.4)),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
         FutureBuilder<TemperamentExpanded>(
           future: expandedFuture,
           builder: (context, snapshot) {
@@ -204,6 +180,30 @@ class _TemperamentContent extends StatelessWidget {
               ],
             );
           },
+        ),
+        const SizedBox(height: 8),
+        Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            collapsedIconColor: AppColors.gold,
+            iconColor: AppColors.gold,
+            title: Text('How this was calculated', style: theme.textTheme.titleMedium),
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                _calculationIntro,
+                style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              ...temperament.factors.map(
+                (f) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(f.detail, style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.4)),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
