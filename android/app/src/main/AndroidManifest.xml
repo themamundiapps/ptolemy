@@ -1,5 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Runtime-requested (Android 13+) the first time the user taps "Add
+         Reminder" in the Electional results -- see ReminderService. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Lets a scheduled reminder still fire while the device is idle
+         (AndroidScheduleMode.inexactAllowWhileIdle) without needing the
+         separate, Play-Store-restricted exact-alarm permission. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="ptolemy"
         android:name="${applicationName}"

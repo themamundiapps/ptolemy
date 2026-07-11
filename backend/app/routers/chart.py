@@ -1,7 +1,16 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import Aspect, ChartRequest, ChartResponse, HouseLordEntry, HouseLordsResponse, ZodiacPosition
-from app.services import ephemeris, timezone as tz_resolver
+from app.models.schemas import (
+    Aspect,
+    ChartAnalysisResponse,
+    ChartRequest,
+    ChartResponse,
+    HouseLordEntry,
+    HouseLordsResponse,
+    ZodiacPosition,
+)
+from app.services import analysis, ephemeris, temperament
+from app.services import timezone as tz_resolver
 
 router = APIRouter(prefix="/chart", tags=["chart"])
 
@@ -145,3 +154,99 @@ def get_house_lords(request: ChartRequest) -> HouseLordsResponse:
         )
 
     return HouseLordsResponse(entries=entries)
+
+
+@router.post("/analysis", response_model=ChartAnalysisResponse)
+def get_chart_analysis(request: ChartRequest) -> ChartAnalysisResponse:
+    if request.tz_offset is not None:
+        tz_offset = request.tz_offset
+    else:
+        try:
+            _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(
+                request.latitude, request.longitude, request.date, request.time
+            )
+        except tz_resolver.TimezoneLookupError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    jd_ut = ephemeris.julian_day_ut(request.date, request.time, tz_offset)
+    asc_lon, mc_lon = ephemeris.calc_angles(jd_ut, request.latitude, request.longitude)
+    asc_sign, _asc_deg = ephemeris.sign_and_degree(asc_lon)
+    mc_sign, _mc_deg = ephemeris.sign_and_degree(mc_lon)
+
+    planets: dict[str, ZodiacPosition] = {}
+    planet_dicts: dict[str, dict] = {}
+    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
+        lon, retrograde = ephemeris.calc_planet(jd_ut, body_id)
+        sign, deg = ephemeris.sign_and_degree(lon)
+        house = ephemeris.whole_sign_house(lon, asc_lon)
+        planets[name] = ZodiacPosition(
+            longitude=lon,
+            sign=sign,
+            sign_longitude=deg,
+            house=house,
+            retrograde=retrograde,
+            dignities=ephemeris.essential_dignities(name, sign),
+        )
+        planet_dicts[name] = {"longitude": lon, "sign": sign, "house": house}
+
+    diurnal = ephemeris.is_diurnal(planets["Sun"].house)
+    sun_lon = planets["Sun"].longitude
+    moon_lon = planets["Moon"].longitude
+
+    season_name, _season_qualities = temperament.season(sun_lon)
+
+    temperament_result = temperament.calculate(
+        asc_sign=asc_sign,
+        planets=planet_dicts,
+        sun_longitude=sun_lon,
+        moon_longitude=moon_lon,
+    )
+
+    planet_prompt_entries = []
+    for name, pos in planets.items():
+        # Orientality (rising before/after the Sun) is meaningless for the
+        # Sun itself; every other planet reuses the same convention already
+        # established by the temperament calculation, rather than a second,
+        # possibly-inconsistent definition.
+        orientation = "—" if name == "Sun" else ("Oriental" if temperament.is_oriental(pos.longitude, sun_lon) else "Occidental")
+        planet_prompt_entries.append(
+            {"name": name, "sign": pos.sign, "house": pos.house, "dignities": pos.dignities, "orientation": orientation}
+        )
+
+    house_lord_lines = []
+    for house_number in range(1, 13):
+        sign = ephemeris.house_sign(house_number, asc_lon)
+        lord = ephemeris.sign_ruler(sign)
+        house_lord_lines.append(f"House {house_number} — Lord: {lord} — in House {planets[lord].house}")
+
+    planet_longitudes = {name: pos.longitude for name, pos in planets.items()}
+    aspects = sorted(ephemeris.find_aspects(planet_longitudes), key=lambda a: a["orb"])
+
+    fortune_lon = ephemeris.lot_of_fortune(asc_lon, sun_lon, moon_lon, diurnal)
+    fortune_sign, _fortune_deg = ephemeris.sign_and_degree(fortune_lon)
+    fortune_house = ephemeris.whole_sign_house(fortune_lon, asc_lon)
+
+    spirit_lon = ephemeris.lot_of_spirit(asc_lon, sun_lon, moon_lon, diurnal)
+    spirit_sign, _spirit_deg = ephemeris.sign_and_degree(spirit_lon)
+    spirit_house = ephemeris.whole_sign_house(spirit_lon, asc_lon)
+
+    prompt = analysis.build_analysis_prompt(
+        ascendant_sign=asc_sign,
+        midheaven_sign=mc_sign,
+        season=season_name,
+        sect="Diurnal" if diurnal else "Nocturnal",
+        temperament_label=temperament_result["temperament"],
+        planets=planet_prompt_entries,
+        house_lord_lines=house_lord_lines,
+        aspects=aspects,
+        fortune_sign=fortune_sign,
+        fortune_house=fortune_house,
+        spirit_sign=spirit_sign,
+        spirit_house=spirit_house,
+    )
+
+    try:
+        text = analysis.generate_analysis(prompt)
+    except analysis.AnalysisError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return ChartAnalysisResponse(analysis=text)

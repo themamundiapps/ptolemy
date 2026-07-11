@@ -89,6 +89,10 @@ class SynthesisResponse(BaseModel):
     synthesis: str
 
 
+class ChartAnalysisResponse(BaseModel):
+    analysis: str
+
+
 class TemperamentFactor(BaseModel):
     label: str
     detail: str

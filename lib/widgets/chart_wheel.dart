@@ -46,6 +46,28 @@ const _conjunctionColor = Color(0xFF5FA86F); // green
 const _bandGap = 34.0;
 const _minGapDeg = 8.0;
 
+// Innermost radius a glyph band is ever allowed to shrink to, so a cluster
+// with many conjunct bodies can't push a band to/past the wheel's center
+// (which would flip the point to the opposite side of the wheel).
+const _minBandRadius = 16.0;
+
+// Minimum on-screen arc length (px) required between two glyphs at the same
+// radius before they're treated as needing separate bands. A fixed-degree
+// threshold alone isn't enough: the same angular gap covers far fewer
+// pixels close to the center, which is exactly what caused overlap on
+// small phone screens (small baseRadius) even though _minGapDeg looked
+// generous in degrees.
+const _minGlyphArcPx = 26.0;
+
+/// Converts [_minGlyphArcPx] into a degree threshold for this specific
+/// [radius], so clustering scales with how large the wheel actually is on
+/// screen rather than assuming a fixed angular gap is always enough.
+double _minGapDegForRadius(double radius) {
+  if (radius <= 0) return 360.0;
+  final degrees = (_minGlyphArcPx / radius) * (180 / math.pi);
+  return degrees < _minGapDeg ? _minGapDeg : degrees;
+}
+
 /// Converts a longitude, expressed relative to the wheel's rotation origin
 /// (the start of the rising sign), into a point on a circle of [radius]
 /// around [center]. 0° sits at the left (the traditional Ascendant position)
@@ -69,8 +91,26 @@ class WheelPlacement {
   final double relative;
   final double radius;
   final Offset point;
+  final int clusterSize;
 
-  const WheelPlacement({required this.relative, required this.radius, required this.point});
+  const WheelPlacement({
+    required this.relative,
+    required this.radius,
+    required this.point,
+    this.clusterSize = 1,
+  });
+}
+
+/// Glyph font size for a member of a cluster this size. A lone or paired
+/// body gets the standard size; larger conjunctions (a real "stellium")
+/// shrink progressively, since radial band spacing alone can't keep 4+
+/// glyphs clear of each other within the limited radius budget available
+/// on a small phone screen without shrinking them too.
+double glyphFontSizeForCluster(int clusterSize) {
+  if (clusterSize <= 2) return 24;
+  if (clusterSize == 3) return 20;
+  if (clusterSize == 4) return 17;
+  return 14;
 }
 
 /// Lays out every planet + lot around the wheel. Points within [_minGapDeg]
@@ -95,14 +135,15 @@ Map<String, WheelPlacement> computeWheelPlacements({
     ..sort((a, b) => a.value.compareTo(b.value));
 
   final n = sorted.length;
+  final minGapDeg = _minGapDegForRadius(baseRadius);
   final clusterOf = List<int>.filled(n, 0);
   for (var i = 1; i < n; i++) {
     final gap = sorted[i].value - sorted[i - 1].value;
-    clusterOf[i] = gap < _minGapDeg ? clusterOf[i - 1] : clusterOf[i - 1] + 1;
+    clusterOf[i] = gap < minGapDeg ? clusterOf[i - 1] : clusterOf[i - 1] + 1;
   }
   // Merge the wraparound seam: if the last point is within range of the
   // first (going the short way through 0°/360°), they're one cluster too.
-  if (n > 1 && (sorted[0].value + 360 - sorted[n - 1].value) < _minGapDeg) {
+  if (n > 1 && (sorted[0].value + 360 - sorted[n - 1].value) < minGapDeg) {
     final lastCluster = clusterOf[n - 1];
     final firstCluster = clusterOf[0];
     if (lastCluster != firstCluster) {
@@ -124,10 +165,22 @@ Map<String, WheelPlacement> computeWheelPlacements({
       final sunIdx = indices.removeAt(sunPos);
       indices.insert(0, sunIdx);
     }
+    // Spread bands evenly across whatever radius budget is actually
+    // available (down to _minBandRadius) rather than always stepping by a
+    // fixed _bandGap, which can run past the center -- and flip to the
+    // opposite side of the wheel -- when many bodies are conjunct in the
+    // same sign.
+    final available = baseRadius - _minBandRadius;
+    final gap = indices.length <= 1 ? 0.0 : math.min(_bandGap, available / (indices.length - 1));
     for (var band = 0; band < indices.length; band++) {
       final e = sorted[indices[band]];
-      final radius = baseRadius - band * _bandGap;
-      placements[e.key] = WheelPlacement(relative: e.value, radius: radius, point: pointOnWheel(center, radius, e.value));
+      final radius = baseRadius - band * gap;
+      placements[e.key] = WheelPlacement(
+        relative: e.value,
+        radius: radius,
+        point: pointOnWheel(center, radius, e.value),
+        clusterSize: indices.length,
+      );
     }
   }
   return placements;
@@ -406,14 +459,26 @@ class _ChartWheelPainter extends CustomPainter {
     for (final name in planetNames) {
       final placement = placements[name];
       if (placement == null) continue;
-      _drawPlanetGlyph(canvas, placement.point, name, AppColors.gold);
+      _drawPlanetGlyph(canvas, placement.point, name, AppColors.gold, placement.clusterSize);
     }
   }
 
-  void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color) {
+  void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color, int clusterSize) {
     final glyph = _planetGlyphs[name];
     if (glyph == null) return;
-    _drawText(canvas, glyph, center, color: color, fontSize: 34, fontFamily: _astronomiconFontFamily);
+    // Base size is ~30% smaller than the original 34 -- the old size
+    // overlapped neighboring glyphs on real device screens. Members of a
+    // larger conjunction shrink further still (see glyphFontSizeForCluster)
+    // since radial band spacing alone can't fit 4+ glyphs within a small
+    // phone's limited radius budget without also shrinking them.
+    _drawText(
+      canvas,
+      glyph,
+      center,
+      color: color,
+      fontSize: glyphFontSizeForCluster(clusterSize),
+      fontFamily: _astronomiconFontFamily,
+    );
   }
 
   void _drawTick(Canvas canvas, Offset center, double ringInner, WheelPlacement placement) {

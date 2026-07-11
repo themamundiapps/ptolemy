@@ -341,6 +341,44 @@ class ApiClient {
     return _decodeJson(response)['synthesis'] as String;
   }
 
+  /// Generates a full natal-chart reading (Chart Analysis tab). This is a
+  /// heavier AI call than [fetchSynthesis] -- covers the whole chart in one
+  /// pass -- so it gets a longer timeout.
+  Future<String> fetchChartAnalysis({
+    required String date,
+    required String time,
+    required double latitude,
+    required double longitude,
+    double? tzOffset,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/v1/chart/analysis');
+
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'date': date,
+              'time': time,
+              'latitude': latitude,
+              'longitude': longitude,
+              if (tzOffset != null) 'tz_offset': tzOffset,
+            }),
+          )
+          .timeout(const Duration(seconds: 45));
+    } catch (e) {
+      throw ApiException('Could not reach backend at $baseUrl: $e');
+    }
+
+    if (response.statusCode != 200) {
+      throw ApiException('Backend error (${response.statusCode}): ${response.body}');
+    }
+
+    return _decodeJson(response)['analysis'] as String;
+  }
+
   Future<Map<String, dynamic>> _get(Uri uri) async {
     final http.Response response;
     try {

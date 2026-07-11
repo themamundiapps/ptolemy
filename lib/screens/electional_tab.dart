@@ -4,6 +4,7 @@ import '../models/chart_models.dart';
 import '../models/electional_theme.dart';
 import '../services/api_client.dart';
 import '../services/error_messages.dart';
+import '../services/reminder_service.dart';
 import '../theme.dart';
 import 'electional_helpers.dart';
 import 'electional_synthesis.dart';
@@ -500,6 +501,7 @@ class ResultsList extends StatelessWidget {
             rank: i + 1,
             day: result.days[i],
             themeKey: themeKey,
+            themeLabel: result.themeLabel,
             synthesis: syntheses[i],
             contextLine: contextLines[i],
           ),
@@ -575,15 +577,19 @@ class DayTile extends StatefulWidget {
   final int rank;
   final ElectionalDay day;
   final String themeKey;
+  final String? themeLabel;
   final String synthesis;
   final String? contextLine;
+  final ReminderService? reminderService;
 
   const DayTile({
     required this.rank,
     required this.day,
     required this.themeKey,
+    this.themeLabel,
     required this.synthesis,
     this.contextLine,
+    this.reminderService,
     super.key,
   });
 
@@ -594,6 +600,84 @@ class DayTile extends StatefulWidget {
 class _DayTileState extends State<DayTile> {
   bool _expanded = false;
   bool _detailsExpanded = false;
+  bool _reminderSet = false;
+  bool _reminderBusy = false;
+
+  ReminderService get _reminders => widget.reminderService ?? ReminderService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReminderState();
+  }
+
+  Future<void> _loadReminderState() async {
+    final isSet = await _reminders.isReminderSet(themeKey: widget.themeKey, date: widget.day.date);
+    if (!mounted) return;
+    setState(() => _reminderSet = isSet);
+  }
+
+  TimeOfDay get _bestTimeOfDay {
+    final parts = widget.day.bestTime.split(':').map(int.parse).toList();
+    return TimeOfDay(hour: parts[0], minute: parts[1]);
+  }
+
+  Future<void> _addReminder() async {
+    final granted = await _reminders.requestPermission();
+    if (!mounted) return;
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notification permission is required to set a reminder.')),
+      );
+      return;
+    }
+
+    final picked = await showTimePicker(context: context, initialTime: _bestTimeOfDay);
+    if (picked == null || !mounted) return;
+
+    setState(() => _reminderBusy = true);
+    try {
+      await _reminders.scheduleReminder(
+        themeKey: widget.themeKey,
+        themeLabel: widget.themeLabel ?? widget.themeKey,
+        date: widget.day.date,
+        time: picked,
+      );
+      if (!mounted) return;
+      setState(() {
+        _reminderSet = true;
+        _reminderBusy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reminder set for ${formatDayHeading(widget.day.date)} at ${picked.format(context)}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _reminderBusy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not set reminder: $e')));
+    }
+  }
+
+  Future<void> _cancelReminder() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Cancel reminder?'),
+        content: Text('This removes the reminder set for ${formatDayHeading(widget.day.date)}.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Keep it')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Cancel reminder')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _reminders.cancelReminder(themeKey: widget.themeKey, date: widget.day.date);
+    if (!mounted) return;
+    setState(() => _reminderSet = false);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reminder cancelled.')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -627,6 +711,15 @@ class _DayTileState extends State<DayTile> {
                     style: theme.textTheme.titleMedium?.copyWith(fontSize: 18),
                   ),
                 ),
+                if (_reminderSet) ...[
+                  InkWell(
+                    onTap: _cancelReminder,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Text('🔔', style: TextStyle(fontSize: 15)),
+                    ),
+                  ),
+                ],
                 Icon(
                   _expanded ? Icons.expand_less : Icons.expand_more,
                   color: AppColors.mutedText,
@@ -689,6 +782,28 @@ class _DayTileState extends State<DayTile> {
                   ),
                 ),
               ],
+              const SizedBox(height: 14),
+              if (_reminderBusy)
+                const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold),
+                )
+              else
+                InkWell(
+                  onTap: _addReminder,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.notifications_none, color: AppColors.gold, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        _reminderSet ? 'Update Reminder' : 'Add Reminder',
+                        style: const TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 12),
               InkWell(
                 onTap: () => setState(() => _detailsExpanded = !_detailsExpanded),

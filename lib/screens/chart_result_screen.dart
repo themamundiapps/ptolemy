@@ -9,6 +9,7 @@ import '../widgets/connectivity_banner.dart';
 import '../widgets/house_lord_detail_sheet.dart';
 import '../widgets/lot_detail_sheet.dart';
 import '../widgets/planet_detail_sheet.dart';
+import 'analysis_tab.dart';
 import 'electional_tab.dart';
 import 'settings_screen.dart';
 import 'temperament_screen.dart';
@@ -69,7 +70,7 @@ class ChartResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ptolemy'),
@@ -83,7 +84,14 @@ class ChartResultScreen extends StatelessWidget {
             labelColor: AppColors.gold,
             unselectedLabelColor: AppColors.mutedText,
             indicatorColor: AppColors.gold,
-            tabs: [Tab(text: 'Chart'), Tab(text: 'Electional'), Tab(text: 'Temperament')],
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+              Tab(text: 'Chart'),
+              Tab(text: 'Electional'),
+              Tab(text: 'Temperament'),
+              Tab(text: 'Analysis'),
+            ],
           ),
         ),
         body: Column(
@@ -112,6 +120,13 @@ class ChartResultScreen extends StatelessWidget {
                     birthTime: birthTime,
                     latitude: latitude,
                     longitude: longitude,
+                  ),
+                  AnalysisTab(
+                    birthDate: birthDate,
+                    birthTime: birthTime,
+                    latitude: latitude,
+                    longitude: longitude,
+                    tzOffset: result.utcOffsetUsed,
                   ),
                 ],
               ),

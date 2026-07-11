@@ -19,6 +19,8 @@ class StorageService {
   static const _kGoogleEmail = 'google_email';
   static const _kBirthDataJson = 'birth_data_json';
   static const _kChartJson = 'chart_json';
+  static const _kAnalysisChartKey = 'chart_analysis_chart_key';
+  static const _kAnalysisText = 'chart_analysis_text';
 
   static Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -74,5 +76,36 @@ class StorageService {
     final prefs = await _prefs;
     await prefs.remove(_kBirthDataJson);
     await prefs.remove(_kChartJson);
+  }
+
+  /// Identifies which nativity a cached Chart Analysis reading belongs to,
+  /// so a stale reading from a previously-viewed chart is never shown
+  /// against a different one.
+  static String chartAnalysisKey({
+    required String date,
+    required String time,
+    required double latitude,
+    required double longitude,
+  }) => '$date|$time|$latitude|$longitude';
+
+  /// Returns the cached reading only if it was generated for [chartKey];
+  /// otherwise null, so a reading generated for a since-changed birth chart
+  /// is never mistaken for a fresh one.
+  static Future<String?> loadCachedAnalysis(String chartKey) async {
+    final prefs = await _prefs;
+    if (prefs.getString(_kAnalysisChartKey) != chartKey) return null;
+    return prefs.getString(_kAnalysisText);
+  }
+
+  static Future<void> saveAnalysis(String chartKey, String text) async {
+    final prefs = await _prefs;
+    await prefs.setString(_kAnalysisChartKey, chartKey);
+    await prefs.setString(_kAnalysisText, text);
+  }
+
+  static Future<void> clearAnalysis() async {
+    final prefs = await _prefs;
+    await prefs.remove(_kAnalysisChartKey);
+    await prefs.remove(_kAnalysisText);
   }
 }
