@@ -115,6 +115,13 @@ class ApiClient {
     return TemperamentResult.fromJson(_decodeJson(response));
   }
 
+  Future<TemperamentExpanded> fetchTemperamentExpanded({required String temperament}) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/v1/temperament/expanded',
+    ).replace(queryParameters: {'temperament': temperament});
+    return TemperamentExpanded.fromJson(await _get(uri));
+  }
+
   Future<ElectionalResult> fetchElectional({
     required String date,
     required String time,

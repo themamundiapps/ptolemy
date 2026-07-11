@@ -104,6 +104,21 @@ class TemperamentResponse(BaseModel):
     factors: list[TemperamentFactor]
 
 
+class TemperamentExpandedSection(BaseModel):
+    text: str
+    citation: str = ""
+
+
+class TemperamentExpandedRecommendations(BaseModel):
+    text: str
+
+
+class TemperamentExpandedResponse(BaseModel):
+    temperament: str
+    health_tendencies: TemperamentExpandedSection
+    traditional_recommendations: TemperamentExpandedRecommendations
+
+
 class ElectionalRequest(BaseModel):
     date: str = Field(..., description="Natal birth date, format YYYY-MM-DD")
     time: str = Field(..., description="Natal birth time, format HH:MM (24h)")

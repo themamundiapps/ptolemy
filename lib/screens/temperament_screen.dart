@@ -20,6 +20,7 @@ class TemperamentTab extends StatefulWidget {
   final String birthTime;
   final double latitude;
   final double longitude;
+  final ApiClient? apiClient;
 
   const TemperamentTab({
     required this.result,
@@ -27,6 +28,7 @@ class TemperamentTab extends StatefulWidget {
     required this.birthTime,
     required this.latitude,
     required this.longitude,
+    this.apiClient,
     super.key,
   });
 
@@ -36,16 +38,24 @@ class TemperamentTab extends StatefulWidget {
 
 class _TemperamentTabState extends State<TemperamentTab> {
   late final Future<TemperamentResult> _future;
+  late final Future<TemperamentExpanded> _expandedFuture;
 
   @override
   void initState() {
     super.initState();
-    _future = ApiClient(baseUrl: defaultBaseUrl()).fetchTemperament(
+    final client = widget.apiClient ?? ApiClient(baseUrl: defaultBaseUrl());
+    _future = client.fetchTemperament(
       date: widget.birthDate,
       time: widget.birthTime,
       latitude: widget.latitude,
       longitude: widget.longitude,
       tzOffset: widget.result.utcOffsetUsed,
+    );
+    // The expanded content is keyed by temperament name, which is only known
+    // once the base calculation returns -- chained onto _future rather than
+    // fetched independently so it can't race ahead with a stale/guessed name.
+    _expandedFuture = _future.then(
+      (result) => client.fetchTemperamentExpanded(temperament: result.temperament),
     );
   }
 
@@ -69,7 +79,7 @@ class _TemperamentTabState extends State<TemperamentTab> {
             ),
           );
         }
-        return _TemperamentContent(temperament: snapshot.data!);
+        return _TemperamentContent(temperament: snapshot.data!, expandedFuture: _expandedFuture);
       },
     );
   }
@@ -77,8 +87,9 @@ class _TemperamentTabState extends State<TemperamentTab> {
 
 class _TemperamentContent extends StatelessWidget {
   final TemperamentResult temperament;
+  final Future<TemperamentExpanded> expandedFuture;
 
-  const _TemperamentContent({required this.temperament});
+  const _TemperamentContent({required this.temperament, required this.expandedFuture});
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +142,228 @@ class _TemperamentContent extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 8),
+        FutureBuilder<TemperamentExpanded>(
+          future: expandedFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(child: CircularProgressIndicator(color: AppColors.gold, strokeWidth: 2)),
+              );
+            }
+            // Fails gracefully: no expanded content is not worth surfacing as
+            // an error, the rest of the temperament screen is already usable.
+            if (snapshot.hasError || !snapshot.hasData) {
+              return const SizedBox.shrink();
+            }
+            final expanded = snapshot.data!;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Theme(
+                  data: theme.copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    initiallyExpanded: true,
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    collapsedIconColor: AppColors.gold,
+                    iconColor: AppColors.gold,
+                    title: Text('Health Tendencies', style: theme.textTheme.titleMedium),
+                    children: [
+                      const SizedBox(height: 4),
+                      Text(
+                        expanded.healthTendencies.text,
+                        style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.5),
+                      ),
+                      if (expanded.healthTendencies.citation.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          expanded.healthTendencies.citation,
+                          style: const TextStyle(
+                            color: AppColors.mutedGold,
+                            fontStyle: FontStyle.italic,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+                _ProSection(
+                  title: 'Traditional Recommendations',
+                  // For now every user is treated as free, same as the
+                  // Electional theme paywall -- Pro entitlement isn't wired
+                  // up to anything real yet.
+                  isUnlocked: false,
+                  onLockedTap: () => _showTemperamentProSheet(context),
+                  children: [_RecommendationsBody(text: expanded.traditionalRecommendations.text)],
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+void _showTemperamentProSheet(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: AppColors.surface,
+    builder: (context) => Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Traditional Recommendations are available with Ptolemy Pro. Unlock all themes and support '
+            'traditional astrology.',
+            style: TextStyle(color: AppColors.bodyText, fontSize: 15, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(onPressed: () {}, child: const Text('Unlock with Pro')),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A collapsible section whose header is either locked (tapping it calls
+/// [onLockedTap] instead of expanding -- used for the Pro-gated Traditional
+/// Recommendations) or, once unlocked, behaves like a normal expand/collapse
+/// tile. Kept separate from the plain [ExpansionTile] used for Health
+/// Tendencies because ExpansionTile always toggles on tap; gating that tap
+/// behind an entitlement check needs its own expand state.
+class _ProSection extends StatefulWidget {
+  final String title;
+  final bool isUnlocked;
+  final VoidCallback onLockedTap;
+  final List<Widget> children;
+
+  const _ProSection({
+    required this.title,
+    required this.isUnlocked,
+    required this.onLockedTap,
+    required this.children,
+  });
+
+  @override
+  State<_ProSection> createState() => _ProSectionState();
+}
+
+class _ProSectionState extends State<_ProSection> {
+  bool _expanded = false;
+
+  void _handleTap() {
+    if (!widget.isUnlocked) {
+      widget.onLockedTap();
+      return;
+    }
+    setState(() => _expanded = !_expanded);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _handleTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Expanded(child: Text(widget.title, style: theme.textTheme.titleMedium)),
+                if (!widget.isUnlocked) ...[
+                  const Icon(Icons.lock_outline, color: AppColors.gold, size: 16),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.gold.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'PRO',
+                      style: TextStyle(
+                        color: AppColors.gold,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ] else
+                  Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: AppColors.gold),
+              ],
+            ),
+          ),
+        ),
+        if (widget.isUnlocked && _expanded) ...widget.children,
+      ],
+    );
+  }
+}
+
+/// Renders Traditional Recommendations' "**Label:** body" paragraphs (as
+/// produced by the backend content parser) with the label as a small gold
+/// caps sub-header and the body text below it in the app's standard body
+/// color, rather than as one undifferentiated block of prose.
+class _RecommendationsBody extends StatelessWidget {
+  final String text;
+
+  const _RecommendationsBody({required this.text});
+
+  static final _labelPattern = RegExp(r'^\*\*(.+?):\*\*\s*(.*)$', dotAll: true);
+
+  @override
+  Widget build(BuildContext context) {
+    final paragraphs = text.split('\n\n').where((p) => p.trim().isNotEmpty);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final paragraph in paragraphs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _buildParagraph(paragraph),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParagraph(String paragraph) {
+    final match = _labelPattern.firstMatch(paragraph);
+    if (match == null) {
+      return Text(paragraph, style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.4));
+    }
+    final label = match.group(1)!;
+    final body = match.group(2)!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.gold,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(body, style: const TextStyle(color: AppColors.bodyText, fontSize: 14, height: 1.4)),
       ],
     );
   }

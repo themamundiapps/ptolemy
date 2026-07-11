@@ -15,6 +15,7 @@ _HOUSES_FILE = _CONTENT_DIR / "ptolemy-planets-in-houses.md"
 _ASPECTS_FILE = _CONTENT_DIR / "ptolemy-aspects.md"
 _ASPECTS_EXTENDED_FILE = _CONTENT_DIR / "ptolemy-aspects-extended.md"
 _HOUSE_LORDS_FILE = _CONTENT_DIR / "ptolemy-house-lords.md"
+_TEMPERAMENT_EXPANDED_FILE = _CONTENT_DIR / "ptolemy-temperament-expanded.md"
 
 _SIGN_HEADER = re.compile(r"^\*\*.+ IN ([A-Z]+)\*\*$")
 _HOUSE_HEADER = re.compile(r"^\*\*.+ IN HOUSE (\d+)\*\*$")
@@ -25,6 +26,13 @@ _QUOTE_LINE = re.compile(r'^\*"(.+)"\*$')
 _CITATION_LINE = re.compile(r"^— (.+)$")
 _HOUSE_LORD_ENTRY_HEADER = re.compile(r"^\*\*Lord of House (\d+) in House (\d+)\*\*$")
 _HOUSE_LORD_SECTION_HEADER = re.compile(r"^# LORD OF HOUSE \d+$")
+# Matches only the 10 pure/mixed temperament section headers ("# SANGUINE —
+# ..." / "# SANGUINE-CHOLERIC — ...") -- the all-caps name requirement is
+# what keeps this from also matching the file's mixed-case title header
+# ("# Ptolemy App — Temperament Expanded Content").
+_TEMPERAMENT_ENTRY_HEADER = re.compile(r"^# ([A-Z]+(?:-[A-Z]+)?) — .+$")
+_TEMPERAMENT_HEALTH_HEADER = re.compile(r"^## Health Tendencies \(Free\)$")
+_TEMPERAMENT_RECOMMENDATIONS_HEADER = re.compile(r"^## Traditional Recommendations \(Pro\)$")
 
 # Only square/trine/opposition are ever present in ptolemy-aspects-extended.md
 # (conjunction and sextile always use the base pair text) -- but the map
@@ -298,6 +306,98 @@ def _house_lord_interpretations() -> dict:
 
 def get_house_lord_interpretation(from_house: int, to_house: int) -> Interpretation | None:
     return _house_lord_interpretations().get((from_house, to_house))
+
+
+class TemperamentExpandedEntry:
+    def __init__(self, health_text: str, health_citation: str, recommendations_text: str):
+        self.health_text = health_text
+        self.health_citation = health_citation
+        self.recommendations_text = recommendations_text
+
+
+@lru_cache
+def _temperament_expanded_entries() -> dict:
+    """Parses ptolemy-temperament-expanded.md's 10 entries (4 pure + 6 mixed
+    temperaments). Each entry has a Health Tendencies body (1-2 paragraphs,
+    plus an optional quote/citation -- only 8 of 10 entries carry one) and a
+    Traditional Recommendations body (several '**Label:** text' paragraphs).
+    Paragraphs are joined with blank lines rather than flattened to a single
+    line (unlike this module's other parsers) because both sections are
+    genuinely multi-paragraph prose meant to read as separate paragraphs, and
+    the Recommendations body's '**Label:**' prefixes are what the Flutter
+    side splits on to render each sub-section's own gold-caps header.
+    """
+    lines = _TEMPERAMENT_EXPANDED_FILE.read_text(encoding="utf-8").splitlines()
+    results: dict = {}
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        entry_match = _TEMPERAMENT_ENTRY_HEADER.match(line)
+        if not entry_match:
+            i += 1
+            continue
+
+        temperament_key = entry_match.group(1)
+        i += 1
+
+        while i < len(lines) and not _TEMPERAMENT_HEALTH_HEADER.match(lines[i].strip()):
+            i += 1
+        i += 1  # past the "## Health Tendencies (Free)" header itself
+
+        health_paragraphs = []
+        health_citation = ""
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if (
+                stripped == "---"
+                or _TEMPERAMENT_RECOMMENDATIONS_HEADER.match(stripped)
+                or _TEMPERAMENT_ENTRY_HEADER.match(stripped)
+            ):
+                break
+            quote_match = _QUOTE_LINE.match(stripped)
+            if quote_match:
+                quote_text = quote_match.group(1)
+                i += 1
+                while i < len(lines) and not lines[i].strip():
+                    i += 1
+                if i < len(lines):
+                    citation_match = _CITATION_LINE.match(lines[i].strip())
+                    if citation_match:
+                        health_citation = f'"{quote_text}" — {citation_match.group(1)}'
+                        i += 1
+                continue
+            if stripped:
+                health_paragraphs.append(stripped)
+            i += 1
+        health_text = "\n\n".join(health_paragraphs)
+
+        while (
+            i < len(lines)
+            and not _TEMPERAMENT_RECOMMENDATIONS_HEADER.match(lines[i].strip())
+            and not _TEMPERAMENT_ENTRY_HEADER.match(lines[i].strip())
+        ):
+            i += 1
+
+        recommendations_paragraphs = []
+        if i < len(lines) and _TEMPERAMENT_RECOMMENDATIONS_HEADER.match(lines[i].strip()):
+            i += 1  # past the "## Traditional Recommendations (Pro)" header itself
+            while i < len(lines):
+                stripped = lines[i].strip()
+                if stripped == "---" or _TEMPERAMENT_ENTRY_HEADER.match(stripped):
+                    break
+                if stripped:
+                    recommendations_paragraphs.append(stripped)
+                i += 1
+        recommendations_text = "\n\n".join(recommendations_paragraphs)
+
+        results[temperament_key] = TemperamentExpandedEntry(health_text, health_citation, recommendations_text)
+
+    return results
+
+
+def get_temperament_expanded(temperament: str) -> TemperamentExpandedEntry | None:
+    return _temperament_expanded_entries().get(temperament.strip().upper())
 
 
 # No dedicated content file for the Lots — general traditional descriptions,

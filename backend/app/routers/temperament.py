@@ -1,7 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
-from app.models.schemas import ChartRequest, TemperamentResponse
-from app.services import ephemeris, temperament
+from app.models.schemas import (
+    ChartRequest,
+    TemperamentExpandedRecommendations,
+    TemperamentExpandedResponse,
+    TemperamentExpandedSection,
+    TemperamentResponse,
+)
+from app.services import ephemeris, interpretations, temperament
 from app.services import timezone as tz_resolver
 
 router = APIRouter(tags=["temperament"])
@@ -37,3 +43,15 @@ def get_temperament(request: ChartRequest) -> TemperamentResponse:
         moon_longitude=planets["Moon"]["longitude"],
     )
     return TemperamentResponse(**result)
+
+
+@router.get("/temperament/expanded", response_model=TemperamentExpandedResponse)
+def get_temperament_expanded(temperament: str = Query(...)) -> TemperamentExpandedResponse:
+    entry = interpretations.get_temperament_expanded(temperament)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No expanded content for temperament '{temperament}'")
+    return TemperamentExpandedResponse(
+        temperament=temperament,
+        health_tendencies=TemperamentExpandedSection(text=entry.health_text, citation=entry.health_citation),
+        traditional_recommendations=TemperamentExpandedRecommendations(text=entry.recommendations_text),
+    )

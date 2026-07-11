@@ -248,6 +248,49 @@ class TemperamentResult {
   }
 }
 
+class TemperamentExpandedSection {
+  final String text;
+  final String citation;
+
+  TemperamentExpandedSection({required this.text, required this.citation});
+
+  factory TemperamentExpandedSection.fromJson(Map<String, dynamic> json) {
+    return TemperamentExpandedSection(text: json['text'] as String, citation: json['citation'] as String);
+  }
+}
+
+class TemperamentExpandedRecommendations {
+  final String text;
+
+  TemperamentExpandedRecommendations({required this.text});
+
+  factory TemperamentExpandedRecommendations.fromJson(Map<String, dynamic> json) {
+    return TemperamentExpandedRecommendations(text: json['text'] as String);
+  }
+}
+
+class TemperamentExpanded {
+  final String temperament;
+  final TemperamentExpandedSection healthTendencies;
+  final TemperamentExpandedRecommendations traditionalRecommendations;
+
+  TemperamentExpanded({
+    required this.temperament,
+    required this.healthTendencies,
+    required this.traditionalRecommendations,
+  });
+
+  factory TemperamentExpanded.fromJson(Map<String, dynamic> json) {
+    return TemperamentExpanded(
+      temperament: json['temperament'] as String,
+      healthTendencies: TemperamentExpandedSection.fromJson(json['health_tendencies'] as Map<String, dynamic>),
+      traditionalRecommendations: TemperamentExpandedRecommendations.fromJson(
+        json['traditional_recommendations'] as Map<String, dynamic>,
+      ),
+    );
+  }
+}
+
 class ElectionalHit {
   final String planet;
   final int house;
