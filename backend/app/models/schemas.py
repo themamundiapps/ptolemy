@@ -162,6 +162,38 @@ class ElectionalResponse(BaseModel):
     days: list[ElectionalDay]
 
 
+class TransitsRequest(BaseModel):
+    date: str = Field(..., description="Natal birth date, format YYYY-MM-DD")
+    time: str = Field(..., description="Natal birth time, format HH:MM (24h)")
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    tz_offset: float | None = Field(None, description="Manual UTC offset override for the natal data")
+
+
+class Transit(BaseModel):
+    transiting_planet: str
+    natal_planet: str
+    aspect: str
+    aspect_symbol: str
+    orb: float
+    is_applying: bool
+    interpretation_key: str
+    is_harmonious: bool
+
+
+class MoonPosition(BaseModel):
+    sign: str
+    house: int
+    phase_name: str
+    phase_angle: float
+
+
+class TransitsResponse(BaseModel):
+    transits: list[Transit]
+    moon_position: MoonPosition
+    moon_natal_aspect: Transit | None = None
+
+
 class UserChartSaveRequest(BaseModel):
     google_id: str
     city_name: str

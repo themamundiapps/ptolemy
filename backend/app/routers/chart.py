@@ -7,9 +7,13 @@ from app.models.schemas import (
     ChartResponse,
     HouseLordEntry,
     HouseLordsResponse,
+    MoonPosition,
+    Transit,
+    TransitsRequest,
+    TransitsResponse,
     ZodiacPosition,
 )
-from app.services import analysis, ephemeris, temperament
+from app.services import analysis, ephemeris, temperament, transits as transits_service
 from app.services import timezone as tz_resolver
 
 router = APIRouter(prefix="/chart", tags=["chart"])
@@ -250,3 +254,47 @@ def get_chart_analysis(request: ChartRequest) -> ChartAnalysisResponse:
     except analysis.AnalysisError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     return ChartAnalysisResponse(analysis=text)
+
+
+@router.post("/transits", response_model=TransitsResponse)
+def get_transits(request: TransitsRequest) -> TransitsResponse:
+    if request.tz_offset is not None:
+        tz_offset = request.tz_offset
+    else:
+        try:
+            _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(
+                request.latitude, request.longitude, request.date, request.time
+            )
+        except tz_resolver.TimezoneLookupError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    natal_jd_ut = ephemeris.julian_day_ut(request.date, request.time, tz_offset)
+    asc_lon, _mc_lon = ephemeris.calc_angles(natal_jd_ut, request.latitude, request.longitude)
+
+    natal_longitudes: dict[str, float] = {}
+    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
+        lon, _retrograde = ephemeris.calc_planet(natal_jd_ut, body_id)
+        natal_longitudes[name] = lon
+
+    transit_jd_ut = transits_service.current_julian_day_ut()
+    hits = transits_service.find_transits(natal_longitudes, transit_jd_ut)
+    transit_list = [Transit(**h) for h in hits]
+
+    sun_id = ephemeris.CLASSICAL_PLANETS["Sun"]
+    moon_id = ephemeris.CLASSICAL_PLANETS["Moon"]
+    sun_lon, _ = ephemeris.calc_planet(transit_jd_ut, sun_id)
+    moon_lon, _ = ephemeris.calc_planet(transit_jd_ut, moon_id)
+    moon_sign, _moon_deg = ephemeris.sign_and_degree(moon_lon)
+    phase_angle = (moon_lon - sun_lon) % 360.0
+
+    moon_position = MoonPosition(
+        sign=moon_sign,
+        house=ephemeris.whole_sign_house(moon_lon, asc_lon),
+        phase_name=transits_service.moon_phase_name(phase_angle),
+        phase_angle=round(phase_angle, 2),
+    )
+
+    moon_hits = [t for t in transit_list if t.transiting_planet == "Moon"]
+    moon_natal_aspect = moon_hits[0] if moon_hits else None
+
+    return TransitsResponse(transits=transit_list, moon_position=moon_position, moon_natal_aspect=moon_natal_aspect)

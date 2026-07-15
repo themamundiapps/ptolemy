@@ -16,12 +16,21 @@ _ASPECTS_FILE = _CONTENT_DIR / "ptolemy-aspects.md"
 _ASPECTS_EXTENDED_FILE = _CONTENT_DIR / "ptolemy-aspects-extended.md"
 _HOUSE_LORDS_FILE = _CONTENT_DIR / "ptolemy-house-lords.md"
 _TEMPERAMENT_EXPANDED_FILE = _CONTENT_DIR / "ptolemy-temperament-expanded.md"
+_TRANSITS_FILE = _CONTENT_DIR / "ptolemy-transits.md"
 
 _SIGN_HEADER = re.compile(r"^\*\*.+ IN ([A-Z]+)\*\*$")
 _HOUSE_HEADER = re.compile(r"^\*\*.+ IN HOUSE (\d+)\*\*$")
 _PLANET_TOKEN = re.compile(r"^#\s+\S+\s+([A-Z]+)$")
 _ASPECT_PAIR_HEADER = re.compile(r"^\*\*(.+?) — (.+?)\*\*$")
 _ASPECT_SPECIFIC_HEADER = re.compile(r"^\*\*(.+?) ([☌⚹□△☍]) (.+?)\*\*$")
+# ptolemy-transits.md's own section/entry shape: a "# TRANSITING <PLANET>"
+# section header followed by one "**Transiting <Planet> ☌ △ ⚹ natal
+# <Planet>**" entry per natal planet -- the harmonious symbols are always
+# literally "☌ △ ⚹" since one entry covers all three (conjunction/trine/
+# sextile share the base text; square/opposition apply the friction prefix
+# at lookup time instead of getting their own entries).
+_TRANSIT_SECTION_HEADER = re.compile(r"^# TRANSITING ([A-Z]+)$")
+_TRANSIT_ENTRY_HEADER = re.compile(r"^\*\*Transiting (\S+) ☌ △ ⚹ natal (\S+)\*\*$")
 _QUOTE_LINE = re.compile(r'^\*"(.+)"\*$')
 _CITATION_LINE = re.compile(r"^— (.+)$")
 _HOUSE_LORD_ENTRY_HEADER = re.compile(r"^\*\*Lord of House (\d+) in House (\d+)\*\*$")
@@ -243,6 +252,88 @@ def get_aspect_interpretation(planet_a: str, planet_b: str, aspect_type: str) ->
     if specific is not None:
         return specific
     return _aspect_pair_interpretations().get(pair_key)
+
+
+def _transit_key(transiting: str, natal: str) -> str:
+    return f"{transiting.strip().title().lower()}_{natal.strip().title().lower()}"
+
+
+@lru_cache
+def _transit_interpretations() -> dict:
+    """Parses ptolemy-transits.md: a '# TRANSITING <PLANET>' section header
+    per transiting body, each followed by 7 '**Transiting X ☌ △ ⚹ natal
+    Y**' entries (one per natal planet, order meaningful -- transiting Sun
+    to natal Moon is a different entry than transiting Moon to natal Sun),
+    each a single body paragraph with no quote/citation. One entry covers
+    all three harmonious aspects; square/opposition reuse the same body with
+    the friction prefix applied at lookup time (get_transit_interpretation).
+
+    Returns an empty dict (rather than raising) if the content file doesn't
+    exist yet, so /interpretations/transit degrades to a clean 404 instead
+    of crashing the whole app until the file is added.
+    """
+    if not _TRANSITS_FILE.is_file():
+        return {}
+
+    lines = _TRANSITS_FILE.read_text(encoding="utf-8").splitlines()
+    results: dict = {}
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        header_match = _TRANSIT_ENTRY_HEADER.match(line)
+        if not header_match:
+            i += 1
+            continue
+
+        transiting_raw, natal_raw = header_match.group(1), header_match.group(2)
+        i += 1
+
+        body_lines = []
+        while (
+            i < len(lines)
+            and lines[i].strip()
+            and not _TRANSIT_ENTRY_HEADER.match(lines[i].strip())
+            and not _TRANSIT_SECTION_HEADER.match(lines[i].strip())
+            and lines[i].strip() != "---"
+        ):
+            body_lines.append(lines[i].strip())
+            i += 1
+        body = " ".join(body_lines).strip()
+
+        results[_transit_key(transiting_raw, natal_raw)] = body
+
+    return results
+
+
+# Every ptolemy-transits.md entry opens either with a planet's proper name
+# (capitalized regardless of sentence position -- must stay capitalized) or
+# with an ordinary word like "The" (capitalized only by sentence position --
+# should lowercase to flow into the prefix). Confirmed against every one of
+# the file's 49 entries: they open with exactly one of these seven words.
+_PROPER_NOUN_SENTENCE_STARTS = {"Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"}
+
+
+def _apply_friction_prefix(body: str) -> str:
+    """For square/opposition transits, prefix with 'With friction, '. The
+    base sentence's leading word is lowercased to flow into the prefix --
+    unless that word is itself a planet's proper name, which must stay
+    capitalized regardless of where it falls in the sentence."""
+    if not body:
+        return body
+    first_word = body.split(" ", 1)[0]
+    if first_word in _PROPER_NOUN_SENTENCE_STARTS:
+        return f"With friction, {body}"
+    return f"With friction, {body[0].lower()}{body[1:]}"
+
+
+def get_transit_interpretation(transiting: str, natal: str, aspect_type: str) -> Interpretation | None:
+    body = _transit_interpretations().get(_transit_key(transiting, natal))
+    if body is None:
+        return None
+    if aspect_type.lower() in {"square", "opposition"}:
+        body = _apply_friction_prefix(body)
+    return Interpretation(body=body, citation="")
 
 
 @lru_cache

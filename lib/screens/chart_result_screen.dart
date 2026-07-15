@@ -13,6 +13,7 @@ import 'analysis_tab.dart';
 import 'electional_tab.dart';
 import 'settings_screen.dart';
 import 'temperament_screen.dart';
+import 'transits_tab.dart';
 
 const _planetOrder = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'];
 
@@ -70,7 +71,7 @@ class ChartResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ptolemy'),
@@ -90,6 +91,7 @@ class ChartResultScreen extends StatelessWidget {
               Tab(text: 'Chart'),
               Tab(text: 'Electional'),
               Tab(text: 'Temperament'),
+              Tab(text: 'Transits'),
               Tab(text: 'Analysis'),
             ],
           ),
@@ -115,6 +117,13 @@ class ChartResultScreen extends StatelessWidget {
                     longitude: longitude,
                   ),
                   TemperamentTab(
+                    result: result,
+                    birthDate: birthDate,
+                    birthTime: birthTime,
+                    latitude: latitude,
+                    longitude: longitude,
+                  ),
+                  TransitsTab(
                     result: result,
                     birthDate: birthDate,
                     birthTime: birthTime,

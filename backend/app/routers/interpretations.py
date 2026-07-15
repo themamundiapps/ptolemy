@@ -55,6 +55,18 @@ def aspect(
     return InterpretationResponse(body=result.body, citation=result.citation)
 
 
+@router.get("/transit", response_model=InterpretationResponse)
+def transit(
+    transiting: str = Query(...),
+    natal: str = Query(...),
+    aspect_type: str = Query(..., pattern="^(conjunction|sextile|square|trine|opposition)$"),
+) -> InterpretationResponse:
+    result = interpretations.get_transit_interpretation(transiting, natal, aspect_type)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No interpretation for transiting {transiting} to natal {natal}")
+    return InterpretationResponse(body=result.body, citation=result.citation)
+
+
 @router.post("/synthesis", response_model=SynthesisResponse)
 def generate_synthesis(request: SynthesisRequest) -> SynthesisResponse:
     try:

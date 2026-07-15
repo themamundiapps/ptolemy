@@ -144,6 +144,77 @@ class ChartResponse {
   };
 }
 
+class Transit {
+  final String transitingPlanet;
+  final String natalPlanet;
+  final String aspect;
+  final String aspectSymbol;
+  final double orb;
+  final bool isApplying;
+  final String interpretationKey;
+  final bool isHarmonious;
+
+  Transit({
+    required this.transitingPlanet,
+    required this.natalPlanet,
+    required this.aspect,
+    required this.aspectSymbol,
+    required this.orb,
+    required this.isApplying,
+    required this.interpretationKey,
+    required this.isHarmonious,
+  });
+
+  factory Transit.fromJson(Map<String, dynamic> json) {
+    return Transit(
+      transitingPlanet: json['transiting_planet'] as String,
+      natalPlanet: json['natal_planet'] as String,
+      aspect: json['aspect'] as String,
+      aspectSymbol: json['aspect_symbol'] as String,
+      orb: (json['orb'] as num).toDouble(),
+      isApplying: json['is_applying'] as bool,
+      interpretationKey: json['interpretation_key'] as String,
+      isHarmonious: json['is_harmonious'] as bool,
+    );
+  }
+}
+
+class MoonPosition {
+  final String sign;
+  final int house;
+  final String phaseName;
+  final double phaseAngle;
+
+  MoonPosition({required this.sign, required this.house, required this.phaseName, required this.phaseAngle});
+
+  factory MoonPosition.fromJson(Map<String, dynamic> json) {
+    return MoonPosition(
+      sign: json['sign'] as String,
+      house: json['house'] as int,
+      phaseName: json['phase_name'] as String,
+      phaseAngle: (json['phase_angle'] as num).toDouble(),
+    );
+  }
+}
+
+class TransitsResult {
+  final List<Transit> transits;
+  final MoonPosition moonPosition;
+  final Transit? moonNatalAspect;
+
+  TransitsResult({required this.transits, required this.moonPosition, this.moonNatalAspect});
+
+  factory TransitsResult.fromJson(Map<String, dynamic> json) {
+    return TransitsResult(
+      transits: (json['transits'] as List).map((e) => Transit.fromJson(e as Map<String, dynamic>)).toList(),
+      moonPosition: MoonPosition.fromJson(json['moon_position'] as Map<String, dynamic>),
+      moonNatalAspect: json['moon_natal_aspect'] == null
+          ? null
+          : Transit.fromJson(json['moon_natal_aspect'] as Map<String, dynamic>),
+    );
+  }
+}
+
 class HouseLordEntry {
   final int houseNumber;
   final String sign;

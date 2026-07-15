@@ -203,6 +203,52 @@ class ApiClient {
         .toList();
   }
 
+  Future<TransitsResult> fetchTransits({
+    required String date,
+    required String time,
+    required double latitude,
+    required double longitude,
+    double? tzOffset,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/v1/chart/transits');
+
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'date': date,
+              'time': time,
+              'latitude': latitude,
+              'longitude': longitude,
+              if (tzOffset != null) 'tz_offset': tzOffset,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      throw ApiException('Could not reach backend at $baseUrl: $e');
+    }
+
+    if (response.statusCode != 200) {
+      throw ApiException('Backend error (${response.statusCode}): ${response.body}');
+    }
+
+    return TransitsResult.fromJson(_decodeJson(response));
+  }
+
+  Future<Interpretation> fetchTransitInterpretation({
+    required String transiting,
+    required String natal,
+    required String aspectType,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/v1/interpretations/transit').replace(
+      queryParameters: {'transiting': transiting, 'natal': natal, 'aspect_type': aspectType},
+    );
+    return Interpretation.fromJson(await _get(uri));
+  }
+
   Future<Interpretation> fetchHouseLordInterpretation({required int fromHouse, required int toHouse}) async {
     final uri = Uri.parse(
       '$baseUrl/api/v1/interpretations/house-lord',
