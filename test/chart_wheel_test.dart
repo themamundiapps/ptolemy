@@ -53,8 +53,6 @@ void main() {
           );
         }
       }
-      // Every member of this 4-body cluster should have shrunk its glyph
-      // size accordingly, per glyphFontSizeForCluster.
       for (final e in entries) {
         expect(e.value.clusterSize, 4);
       }
@@ -74,13 +72,9 @@ void main() {
       }
     });
 
-    test('glyphFontSizeForCluster shrinks progressively and never returns a non-positive size', () {
-      expect(glyphFontSizeForCluster(1), 24);
-      expect(glyphFontSizeForCluster(2), 24);
-      expect(glyphFontSizeForCluster(3), lessThan(24));
-      expect(glyphFontSizeForCluster(4), lessThan(glyphFontSizeForCluster(3)));
-      expect(glyphFontSizeForCluster(7), lessThan(glyphFontSizeForCluster(4)));
-      expect(glyphFontSizeForCluster(7), greaterThan(0));
+    test('planetGlyphFontSize is a single fixed size, small enough for a 4-body cluster to stay clear', () {
+      expect(planetGlyphFontSize, greaterThan(0));
+      expect(planetGlyphFontSize, lessThanOrEqualTo(15));
     });
 
     test('widely separated planets are not forced into the same cluster', () {

@@ -43,6 +43,18 @@ const _trineSextileColor = Color(0xFF6FA8DC); // harmonious — blue
 const _squareOppositionColor = Color(0xFFB05C5C); // hard — red
 const _conjunctionColor = Color(0xFF5FA86F); // green
 
+const _aspectColors = {
+  'conjunction': _conjunctionColor,
+  'trine': _trineSextileColor,
+  'sextile': _trineSextileColor,
+  'square': _squareOppositionColor,
+  'opposition': _squareOppositionColor,
+};
+
+// Only the most exact aspects are drawn on the wheel itself; the full list
+// remains available in the aspect list below it.
+const _maxAspectLines = 5;
+
 const _bandGap = 34.0;
 const _minGapDeg = 8.0;
 
@@ -101,17 +113,11 @@ class WheelPlacement {
   });
 }
 
-/// Glyph font size for a member of a cluster this size. A lone or paired
-/// body gets the standard size; larger conjunctions (a real "stellium")
-/// shrink progressively, since radial band spacing alone can't keep 4+
-/// glyphs clear of each other within the limited radius budget available
-/// on a small phone screen without shrinking them too.
-double glyphFontSizeForCluster(int clusterSize) {
-  if (clusterSize <= 2) return 24;
-  if (clusterSize == 3) return 20;
-  if (clusterSize == 4) return 17;
-  return 14;
-}
+/// Fixed glyph font size for every planet and Lot, regardless of how many
+/// bodies are conjunct. Radial band spacing (see [computeWheelPlacements])
+/// is what keeps a crowded stellium from overlapping, not glyph shrinking —
+/// so a single small-enough size works across the whole wheel.
+const double planetGlyphFontSize = 15;
 
 /// Lays out every planet + lot around the wheel. Points within [_minGapDeg]
 /// of their neighbors are grouped into a cluster (with circular wraparound
@@ -203,8 +209,7 @@ class ChartWheel extends StatelessWidget {
         final outerRadius = side / 2 - 4;
         final degreeScaleInner = outerRadius * 0.92;
         final zodiacInner = degreeScaleInner * 0.78;
-        final houseNumInner = zodiacInner * 0.84;
-        final baseRadius = houseNumInner - 40;
+        final baseRadius = zodiacInner - 40;
 
         final placements = computeWheelPlacements(
           result: result,
@@ -259,17 +264,15 @@ class _ChartWheelPainter extends CustomPainter {
     final outerRadius = size.width / 2 - 4;
     final degreeScaleInner = outerRadius * 0.92;
     final zodiacInner = degreeScaleInner * 0.78;
-    final houseNumInner = zodiacInner * 0.84;
 
     final risingSignIndex = (signStart / 30).round() % 12;
 
     _drawDegreeScale(canvas, center, outerRadius, degreeScaleInner);
     _drawZodiacRing(canvas, center, degreeScaleInner, zodiacInner, risingSignIndex);
-    _drawHouseNumberRing(canvas, center, zodiacInner, houseNumInner);
-    _drawBoundaryDividers(canvas, center, houseNumInner, outerRadius);
+    _drawBoundaryDividers(canvas, center, zodiacInner, outerRadius);
     _drawAngleMarkers(canvas, center, zodiacInner);
-    _drawAspectLines(canvas, center, houseNumInner - 6);
-    _drawPoints(canvas, center, houseNumInner);
+    _drawAspectLines(canvas, center, zodiacInner - 6);
+    _drawPoints(canvas, center, zodiacInner);
   }
 
   void _drawDegreeScale(Canvas canvas, Offset center, double outer, double inner) {
@@ -316,25 +319,6 @@ class _ChartWheelPainter extends CustomPainter {
         color: AppColors.bodyText,
         fontSize: 22,
         fontFamily: _astronomiconFontFamily,
-      );
-    }
-
-    final ringLine = Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    canvas.drawCircle(center, inner, ringLine);
-  }
-
-  void _drawHouseNumberRing(Canvas canvas, Offset center, double outer, double inner) {
-    for (var j = 0; j < 12; j++) {
-      final relStart = j * 30.0;
-      _drawText(
-        canvas,
-        '${j + 1}',
-        pointOnWheel(center, (outer + inner) / 2, relStart + 15),
-        color: AppColors.mutedText,
-        fontSize: 12,
       );
     }
 
@@ -402,25 +386,53 @@ class _ChartWheelPainter extends CustomPainter {
     );
   }
 
+  /// Draws only the [_maxAspectLines] most exact aspects (smallest orb) so
+  /// the wheel doesn't turn into a web of lines. Within that set, opacity
+  /// (and, for squares, a dashed stroke) establishes a visual hierarchy:
+  /// conjunctions/oppositions read as the most important, trines/sextiles
+  /// as secondary, and squares as present but visually recessive.
   void _drawAspectLines(Canvas canvas, Offset center, double radius) {
-    for (final aspect in result.aspects) {
-      final color = switch (aspect.aspect) {
-        'trine' || 'sextile' => _trineSextileColor,
-        'square' || 'opposition' => _squareOppositionColor,
-        'conjunction' => _conjunctionColor,
-        _ => null,
-      };
-      if (color == null) continue;
+    final candidates = result.aspects.where((a) => _aspectColors.containsKey(a.aspect)).toList()
+      ..sort((a, b) => a.orb.compareTo(b.orb));
 
+    for (final aspect in candidates.take(_maxAspectLines)) {
       final a = placements[aspect.planetA];
       final b = placements[aspect.planetB];
       if (a == null || b == null) continue;
 
+      final color = _aspectColors[aspect.aspect]!;
+      final alpha = switch (aspect.aspect) {
+        'conjunction' || 'opposition' => 1.0,
+        'trine' || 'sextile' => 0.5,
+        'square' => 0.4,
+        _ => 0.32,
+      };
       final paint = Paint()
-        ..color = color.withValues(alpha: 0.32)
+        ..color = color.withValues(alpha: alpha)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1;
-      canvas.drawLine(pointOnWheel(center, radius, a.relative), pointOnWheel(center, radius, b.relative), paint);
+
+      final p1 = pointOnWheel(center, radius, a.relative);
+      final p2 = pointOnWheel(center, radius, b.relative);
+      if (aspect.aspect == 'square') {
+        _drawDashedLine(canvas, p1, p2, paint);
+      } else {
+        canvas.drawLine(p1, p2, paint);
+      }
+    }
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint) {
+    const dashLength = 4.0;
+    const gapLength = 3.0;
+    final total = (p2 - p1).distance;
+    if (total <= 0) return;
+    final direction = (p2 - p1) / total;
+    var distance = 0.0;
+    while (distance < total) {
+      final segmentEnd = math.min(distance + dashLength, total);
+      canvas.drawLine(p1 + direction * distance, p1 + direction * segmentEnd, paint);
+      distance += dashLength + gapLength;
     }
   }
 
@@ -459,24 +471,19 @@ class _ChartWheelPainter extends CustomPainter {
     for (final name in planetNames) {
       final placement = placements[name];
       if (placement == null) continue;
-      _drawPlanetGlyph(canvas, placement.point, name, AppColors.gold, placement.clusterSize);
+      _drawPlanetGlyph(canvas, placement.point, name, AppColors.gold);
     }
   }
 
-  void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color, int clusterSize) {
+  void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color) {
     final glyph = _planetGlyphs[name];
     if (glyph == null) return;
-    // Base size is ~30% smaller than the original 34 -- the old size
-    // overlapped neighboring glyphs on real device screens. Members of a
-    // larger conjunction shrink further still (see glyphFontSizeForCluster)
-    // since radial band spacing alone can't fit 4+ glyphs within a small
-    // phone's limited radius budget without also shrinking them.
     _drawText(
       canvas,
       glyph,
       center,
       color: color,
-      fontSize: glyphFontSizeForCluster(clusterSize),
+      fontSize: planetGlyphFontSize,
       fontFamily: _astronomiconFontFamily,
     );
   }
