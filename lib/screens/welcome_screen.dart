@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../widgets/armillary_sphere_icon.dart';
+import '../widgets/google_sign_in_button.dart';
 
 /// The very first screen a new device sees: pick Google or Guest, then hand
 /// off to [AppFlow.goToChartOrBirthData] to decide what comes next.
@@ -18,13 +19,19 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   bool _signingIn = false;
+  String? _error;
 
-  Future<void> _continueWithGoogle() async {
-    setState(() => _signingIn = true);
-    final account = await AuthService.signInWithGoogle();
+  Future<void> _onSignedIn(GoogleAccount account) async {
+    setState(() => _error = null);
     await StorageService.saveGoogleSession(id: account.id, name: account.name, email: account.email);
     if (!mounted) return;
     await AppFlow.goToChartOrBirthData(context);
+  }
+
+  /// Sign-in failed or was cancelled -- stay on this screen with a friendly
+  /// message rather than navigating anywhere.
+  void _onSignInError(String message) {
+    if (mounted) setState(() => _error = message);
   }
 
   Future<void> _continueAsGuest() async {
@@ -60,20 +67,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 14, letterSpacing: 0.5),
               ),
               const Spacer(flex: 4),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _signingIn ? null : _continueWithGoogle,
-                  icon: _signingIn
-                      ? const SizedBox(
-                          height: 16,
-                          width: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.background),
-                        )
-                      : const _GoogleMark(),
-                  label: const Text('Continue with Google'),
-                ),
+              GoogleSignInButton(
+                onSignedIn: _onSignedIn,
+                onError: _onSignInError,
+                onSigningInChanged: (value) => setState(() => _signingIn = value),
               ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.warning, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
@@ -97,24 +103,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _GoogleMark extends StatelessWidget {
-  const _GoogleMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-      alignment: Alignment.center,
-      child: const Text(
-        'G',
-        style: TextStyle(color: Color(0xFF4285F4), fontWeight: FontWeight.bold, fontSize: 13, height: 1),
       ),
     );
   }

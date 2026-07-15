@@ -54,6 +54,22 @@ class StorageService {
 
   static Future<void> saveGuestSession() async => (await _prefs).setString(_kAuthMode, 'guest');
 
+  /// Clears everything tied to the current sign-in -- session, cached chart,
+  /// and cached analysis -- so a signed-out device behaves like a fresh
+  /// install rather than silently reloading the previous account's data if
+  /// someone signs back in. Onboarding-seen is deliberately left alone: that
+  /// flag is about whether this device has ever seen the intro, not about
+  /// which account is signed in.
+  static Future<void> clearSession() async {
+    final prefs = await _prefs;
+    await prefs.remove(_kAuthMode);
+    await prefs.remove(_kGoogleId);
+    await prefs.remove(_kGoogleName);
+    await prefs.remove(_kGoogleEmail);
+    await clearChart();
+    await clearAnalysis();
+  }
+
   static Future<BirthData?> loadBirthData() async {
     final raw = (await _prefs).getString(_kBirthDataJson);
     if (raw == null) return null;

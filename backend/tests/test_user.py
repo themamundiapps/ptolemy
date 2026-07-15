@@ -54,3 +54,21 @@ def test_saving_again_overwrites_the_previous_entry():
 
     get_response = client.get(f"/api/v1/user/chart/{_PAYLOAD['google_id']}")
     assert get_response.json()["city_name"] == "Rome, Italy"
+
+
+def test_works_with_a_real_shaped_google_account_id():
+    # A real Google account "sub" claim is a long numeric string (commonly
+    # ~21 digits) -- distinct in shape from the short hand-written mock id
+    # ("mock-google-user-001") this endpoint was originally exercised with.
+    # google_id is just an opaque str key end to end (schemas.py has no
+    # length/format constraint, and user_store.py is a plain dict keyed by
+    # whatever string it's given), so no backend change was needed for this
+    # to already work -- this test pins that.
+    real_id = "108234982374928374023"
+    payload = {**_PAYLOAD, "google_id": real_id}
+    save_response = client.post("/api/v1/user/chart", json=payload)
+    assert save_response.status_code == 200
+
+    get_response = client.get(f"/api/v1/user/chart/{real_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["city_name"] == payload["city_name"]
