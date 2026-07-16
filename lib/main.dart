@@ -2,9 +2,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/app_startup_screen.dart';
+import 'services/billing_service.dart';
 import 'theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await BillingService.instance.initialize();
   runApp(const PtolemyApp());
 }
 

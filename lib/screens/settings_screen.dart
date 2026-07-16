@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import '../models/auth_session.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/billing_service.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../widgets/google_sign_in_button.dart';
+import '../widgets/pro_status_builder.dart';
 import 'birth_data_screen.dart';
+import 'paywall_screen.dart';
 import 'welcome_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -16,10 +19,16 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+const _monthNames = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
 class _SettingsScreenState extends State<SettingsScreen> {
   AuthSession? _session;
   bool _backingUp = false;
   String? _backUpError;
+  bool _restoring = false;
+  String? _restoreMessage;
 
   @override
   void initState() {
@@ -64,6 +73,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Navigator.of(
       context,
     ).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const BirthDataScreen()), (route) => false);
+  }
+
+  Future<void> _restorePurchase() async {
+    setState(() {
+      _restoring = true;
+      _restoreMessage = null;
+    });
+    try {
+      await BillingService.instance.restorePurchases();
+      if (!mounted) return;
+      setState(() {
+        _restoring = false;
+        _restoreMessage = BillingService.instance.isPro
+            ? 'Purchase restored.'
+            : 'No active subscription found to restore.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _restoring = false;
+        _restoreMessage = e is BillingException ? e.message : kBillingUnavailableMessage;
+      });
+    }
+  }
+
+  /// The earliest-to-read renewal date among the user's active entitlements,
+  /// formatted as e.g. "16 Jul 2027" -- null if unavailable (no active
+  /// entitlement carries an expiration, or none is currently known).
+  String? _renewalDateLabel() {
+    final active = BillingService.instance.customerInfo?.entitlements.active.values;
+    if (active == null || active.isEmpty) return null;
+    final raw = active.first.expirationDate;
+    if (raw == null) return null;
+    final date = DateTime.tryParse(raw);
+    if (date == null) return null;
+    return '${date.day} ${_monthNames[date.month - 1]} ${date.year}';
   }
 
   @override
@@ -120,10 +165,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: OutlinedButton(onPressed: _recalculate, child: const Text('Recalculate Chart')),
           ),
           const SizedBox(height: 32),
+          Text('Subscription', style: textTheme.titleMedium),
+          const Divider(height: 20),
+          ProStatusBuilder(
+            builder: (context, isPro) {
+              if (isPro) {
+                final renewalDate = _renewalDateLabel();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Ptolemy Pro — Active',
+                      style: TextStyle(color: AppColors.gold, fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    if (renewalDate != null) ...[
+                      const SizedBox(height: 4),
+                      Text('Renews $renewalDate', style: const TextStyle(color: AppColors.mutedText, fontSize: 13)),
+                    ],
+                  ],
+                );
+              }
+              return SizedBox(
+                width: double.infinity,
+                child: FilledButton(onPressed: () => showPaywallScreen(context), child: const Text('Upgrade to Pro')),
+              );
+            },
+          ),
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(onPressed: () {}, child: const Text('Restore Purchase')),
+            child: OutlinedButton(
+              onPressed: _restoring ? null : _restorePurchase,
+              child: _restoring
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold),
+                    )
+                  : const Text('Restore Purchase'),
+            ),
           ),
+          if (_restoreMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(_restoreMessage!, style: const TextStyle(color: AppColors.mutedText, fontSize: 12)),
+          ],
           const SizedBox(height: 40),
           const Center(child: Text('Ptolemy v1.0.0', style: TextStyle(color: AppColors.mutedText, fontSize: 12))),
         ],

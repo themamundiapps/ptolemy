@@ -78,12 +78,13 @@ void main() {
       expect(find.text('30 days'), findsOneWidget);
     });
 
-    testWidgets('tapping a pro theme shows the paywall sheet instead of navigating', (tester) async {
+    testWidgets('tapping a pro theme opens the paywall instead of navigating to period selection', (tester) async {
       await tester.pumpWidget(buildTab());
       await tester.tap(find.text('Business & Career'));
       await tester.pumpAndSettle();
-      expect(find.text('Unlock with Pro'), findsOneWidget);
-      // Still on the theme list, not the period screen.
+      expect(find.text('Ptolemy Pro'), findsOneWidget);
+      expect(find.text('Subscribe'), findsOneWidget);
+      // Not on the period screen.
       expect(find.text('30 days'), findsNothing);
     });
   });

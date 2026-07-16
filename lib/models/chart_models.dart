@@ -247,6 +247,126 @@ class HouseLordEntry {
   }
 }
 
+/// One native's birth data as sent to POST /chart/synastry -- separate from
+/// [BirthData] since it also carries an optional display name, which only
+/// matters for a synastry comparison.
+class SynastryPersonInput {
+  final String? name;
+  final String date;
+  final String time;
+  final double latitude;
+  final double longitude;
+  final double? tzOffset;
+
+  SynastryPersonInput({
+    this.name,
+    required this.date,
+    required this.time,
+    required this.latitude,
+    required this.longitude,
+    this.tzOffset,
+  });
+
+  Map<String, dynamic> toJson() => {
+    if (name != null && name!.isNotEmpty) 'name': name,
+    'date': date,
+    'time': time,
+    'latitude': latitude,
+    'longitude': longitude,
+    if (tzOffset != null) 'tz_offset': tzOffset,
+  };
+}
+
+class SynastryHouseOverlay {
+  final String planet;
+  final String fromChart;
+  final String sign;
+  final int house;
+
+  SynastryHouseOverlay({required this.planet, required this.fromChart, required this.sign, required this.house});
+
+  factory SynastryHouseOverlay.fromJson(Map<String, dynamic> json) {
+    return SynastryHouseOverlay(
+      planet: json['planet'] as String,
+      fromChart: json['from_chart'] as String,
+      sign: json['sign'] as String,
+      house: json['house'] as int,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'planet': planet, 'from_chart': fromChart, 'sign': sign, 'house': house};
+}
+
+class SynastryAspect {
+  final String planetA;
+  final String planetB;
+  final String aspect;
+  final double angle;
+  final double orb;
+
+  SynastryAspect({
+    required this.planetA,
+    required this.planetB,
+    required this.aspect,
+    required this.angle,
+    required this.orb,
+  });
+
+  factory SynastryAspect.fromJson(Map<String, dynamic> json) {
+    return SynastryAspect(
+      planetA: json['planet_a'] as String,
+      planetB: json['planet_b'] as String,
+      aspect: json['aspect'] as String,
+      angle: (json['angle'] as num).toDouble(),
+      orb: (json['orb'] as num).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'planet_a': planetA,
+    'planet_b': planetB,
+    'aspect': aspect,
+    'angle': angle,
+    'orb': orb,
+  };
+}
+
+class SynastryResult {
+  final String personAName;
+  final String personBName;
+  final List<SynastryHouseOverlay> houseOverlays;
+  final List<SynastryAspect> aspects;
+  final String analysis;
+
+  SynastryResult({
+    required this.personAName,
+    required this.personBName,
+    required this.houseOverlays,
+    required this.aspects,
+    required this.analysis,
+  });
+
+  factory SynastryResult.fromJson(Map<String, dynamic> json) {
+    return SynastryResult(
+      personAName: json['person_a_name'] as String,
+      personBName: json['person_b_name'] as String,
+      houseOverlays: (json['house_overlays'] as List)
+          .map((e) => SynastryHouseOverlay.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      aspects: (json['aspects'] as List).map((e) => SynastryAspect.fromJson(e as Map<String, dynamic>)).toList(),
+      analysis: json['analysis'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'person_a_name': personAName,
+    'person_b_name': personBName,
+    'house_overlays': houseOverlays.map((o) => o.toJson()).toList(),
+    'aspects': aspects.map((a) => a.toJson()).toList(),
+    'analysis': analysis,
+  };
+}
+
 class CityResult {
   final String name;
   final double latitude;

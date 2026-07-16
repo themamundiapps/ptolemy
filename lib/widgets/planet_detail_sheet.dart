@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/chart_models.dart';
+import '../screens/paywall_screen.dart';
 import '../services/api_client.dart';
+import '../services/error_messages.dart';
+import '../services/storage_service.dart';
 import '../theme.dart';
-
-// Hardcoded during development — real subscription state comes later.
-const bool _isSubscriber = true;
+import 'pro_status_builder.dart';
 
 const _bodyStyle = TextStyle(color: AppColors.bodyText, fontSize: 15, height: 1.5);
 const _citationStyle = TextStyle(color: AppColors.mutedGold, fontStyle: FontStyle.italic, fontSize: 12, height: 1.4);
@@ -81,16 +82,24 @@ class _PlanetDetailSheetState extends State<_PlanetDetailSheet> {
     super.initState();
     _signFuture = widget.apiClient.fetchPlanetInSign(planet: widget.planetName, sign: widget.position.sign);
     _houseFuture = widget.apiClient.fetchPlanetInHouse(planet: widget.planetName, house: widget.position.house);
-    if (_isSubscriber) {
-      _synthesisFuture = widget.apiClient.fetchSynthesis(
-        planet: widget.planetName,
-        sign: widget.position.sign,
-        house: widget.position.house,
-        sect: widget.result.sect,
-        dignities: widget.position.dignities,
-        aspects: widget.relevantAspects,
-      );
-    }
+  }
+
+  /// Starts the fetch the first time build() observes an active Pro
+  /// entitlement -- at initial open if already Pro, or later if the user
+  /// subscribes via the paywall and pops back to this still-open sheet.
+  Future<String> _ensureSynthesisFuture() => _synthesisFuture ??= _loadSynthesis();
+
+  Future<String> _loadSynthesis() async {
+    final userId = await StorageService.resolveUserId();
+    return widget.apiClient.fetchSynthesis(
+      planet: widget.planetName,
+      sign: widget.position.sign,
+      house: widget.position.house,
+      sect: widget.result.sect,
+      dignities: widget.position.dignities,
+      aspects: widget.relevantAspects,
+      userId: userId,
+    );
   }
 
   @override
@@ -116,7 +125,10 @@ class _PlanetDetailSheetState extends State<_PlanetDetailSheet> {
           const SizedBox(height: 20),
           Text('Personal Synthesis', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
-          if (!_isSubscriber) const _LockedSynthesis() else _SynthesisContent(future: _synthesisFuture!),
+          ProStatusBuilder(
+            builder: (context, isPro) =>
+                !isPro ? const _LockedSynthesis() : _SynthesisContent(future: _ensureSynthesisFuture()),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
             child: Divider(color: AppColors.gold, thickness: 1, height: 1),
@@ -213,7 +225,7 @@ class _LockedSynthesis extends StatelessWidget {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: FilledButton(onPressed: () {}, child: const Text('Unlock with Pro')),
+              child: FilledButton(onPressed: () => showPaywallScreen(context), child: const Text('Unlock with Pro')),
             ),
           ],
         ),
@@ -239,10 +251,8 @@ class _SynthesisContent extends StatelessWidget {
           );
         }
         if (snapshot.hasError || !snapshot.hasData) {
-          return const Text(
-            'Personal Synthesis temporarily unavailable',
-            style: TextStyle(color: AppColors.mutedText, fontStyle: FontStyle.italic),
-          );
+          final message = snapshot.hasError ? friendlyApiError(snapshot.error!) : 'Personal Synthesis temporarily unavailable';
+          return Text(message, style: const TextStyle(color: AppColors.mutedText, fontStyle: FontStyle.italic));
         }
         return Text(snapshot.data!, style: _bodyStyle);
       },

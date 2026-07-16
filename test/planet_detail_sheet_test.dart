@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:ptolemy/models/chart_models.dart';
 import 'package:ptolemy/services/api_client.dart';
+import 'package:ptolemy/services/billing_service.dart';
 import 'package:ptolemy/widgets/planet_detail_sheet.dart';
 
 ZodiacPosition _pos({
@@ -49,6 +52,21 @@ ChartResponse _chart({String sect = 'diurnal', List<Aspect> aspects = const []})
 final _unreachableClient = ApiClient(baseUrl: 'http://127.0.0.1:1');
 
 void main() {
+  setUp(() {
+    // showPlanetDetailSheet now resolves a user id (Google id or a
+    // persisted device id) via StorageService before fetching Personal
+    // Synthesis -- without a mocked SharedPreferences, that platform
+    // channel call never resolves and pumpAndSettle hangs.
+    SharedPreferences.setMockInitialValues({});
+    // Personal Synthesis is Pro-gated; these tests exercise the unlocked
+    // content, not the paywall lock card (that's covered separately).
+    BillingService.instance.debugIsProOverride = true;
+  });
+
+  tearDown(() {
+    BillingService.instance.debugIsProOverride = null;
+  });
+
   Future<void> openSheet(WidgetTester tester, {ChartResponse? result, String planetName = 'Venus'}) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -95,12 +113,20 @@ void main() {
   testWidgets('Personal Synthesis falls back to an unavailable message when the fetch fails', (tester) async {
     await openSheet(tester);
     await tester.pumpAndSettle();
-    expect(find.text('Personal Synthesis temporarily unavailable'), findsOneWidget);
+    expect(find.text('Calculations temporarily unavailable — please try again shortly.'), findsOneWidget);
   });
 
   testWidgets('still shows the free sign and house interpretation titles', (tester) async {
     await openSheet(tester);
     expect(find.text('Venus in Taurus'), findsOneWidget);
     expect(find.text('Venus in House 2'), findsOneWidget);
+  });
+
+  testWidgets('shows the paywall lock instead of a synthesis fetch when the user is not Pro', (tester) async {
+    BillingService.instance.debugIsProOverride = false;
+    await openSheet(tester);
+    expect(find.text('Unlock with Pro'), findsOneWidget);
+    // Still shows the free sections underneath the lock.
+    expect(find.text('Venus in Taurus'), findsOneWidget);
   });
 }

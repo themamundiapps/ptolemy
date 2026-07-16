@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../services/error_messages.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
-
-// Hardcoded during development -- real subscription state comes later, same
-// pattern as planet_detail_sheet.dart's _isSubscriber.
-const bool _isSubscriber = true;
+import '../widgets/pro_status_builder.dart';
+import 'paywall_screen.dart';
 
 const _subtitleStyle = TextStyle(color: AppColors.mutedText, fontSize: 14, height: 1.5);
 
@@ -73,12 +72,14 @@ class _AnalysisTabState extends State<AnalysisTab> {
       _errorMessage = null;
     });
     try {
+      final userId = await StorageService.resolveUserId();
       final text = await _client.fetchChartAnalysis(
         date: widget.birthDate,
         time: widget.birthTime,
         latitude: widget.latitude,
         longitude: widget.longitude,
         tzOffset: widget.tzOffset,
+        userId: userId,
       );
       await StorageService.saveAnalysis(_chartKey, text);
       if (!mounted) return;
@@ -90,38 +91,42 @@ class _AnalysisTabState extends State<AnalysisTab> {
       if (!mounted) return;
       setState(() {
         _status = _Status.error;
-        _errorMessage = '$e';
+        _errorMessage = friendlyApiError(e);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isSubscriber) return const _LockedAnalysis();
+    return ProStatusBuilder(
+      builder: (context, isPro) {
+        if (!isPro) return const _LockedAnalysis();
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text('Chart Analysis', style: Theme.of(context).textTheme.headlineLarge),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text('Chart Analysis', style: Theme.of(context).textTheme.headlineLarge),
+                  ),
+                  if (_status == _Status.loaded)
+                    TextButton.icon(
+                      onPressed: _generate,
+                      icon: const Icon(Icons.replay, color: AppColors.mutedGold, size: 16),
+                      label: const Text('Regenerate ↺', style: TextStyle(color: AppColors.mutedGold, fontSize: 12)),
+                    ),
+                ],
               ),
-              if (_status == _Status.loaded)
-                TextButton.icon(
-                  onPressed: _generate,
-                  icon: const Icon(Icons.replay, color: AppColors.mutedGold, size: 16),
-                  label: const Text('Regenerate ↺', style: TextStyle(color: AppColors.mutedGold, fontSize: 12)),
-                ),
+              const SizedBox(height: 4),
+              Expanded(child: _body()),
             ],
           ),
-          const SizedBox(height: 4),
-          Expanded(child: _body()),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -152,9 +157,9 @@ class _GenerateBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (errorMessage != null) ...[
-            const Text(
-              'Could not generate a reading. Please try again.',
-              style: TextStyle(color: AppColors.warning, fontSize: 13),
+            Text(
+              errorMessage!,
+              style: const TextStyle(color: AppColors.warning, fontSize: 13),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -250,7 +255,7 @@ class _LockedAnalysis extends StatelessWidget {
             const SizedBox(height: 16),
             SizedBox(
               width: 220,
-              child: FilledButton(onPressed: () {}, child: const Text('Unlock with Pro')),
+              child: FilledButton(onPressed: () => showPaywallScreen(context), child: const Text('Unlock with Pro')),
             ),
           ],
         ),

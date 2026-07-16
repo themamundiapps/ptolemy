@@ -32,6 +32,14 @@ class ApiTimeoutException extends ApiException {
   ApiTimeoutException(super.message);
 }
 
+/// Thrown when the backend's shared daily AI-call limit (Chart Analysis +
+/// Synastry + Personal Synthesis combined) has been reached for this user,
+/// so callers can show a distinct "come back tomorrow" message rather than
+/// a generic connectivity error.
+class RateLimitException extends ApiException {
+  RateLimitException(super.message);
+}
+
 class ApiClient {
   final String baseUrl;
 
@@ -357,6 +365,7 @@ class ApiClient {
     required String sect,
     required List<String> dignities,
     required List<String> aspects,
+    String? userId,
   }) async {
     final uri = Uri.parse('$baseUrl/api/v1/interpretations/synthesis');
 
@@ -373,6 +382,7 @@ class ApiClient {
               'sect': sect,
               'dignities': dignities,
               'aspects': aspects,
+              if (userId != null) 'user_id': userId,
             }),
           )
           .timeout(const Duration(seconds: 20));
@@ -380,6 +390,9 @@ class ApiClient {
       throw ApiException('Could not reach backend at $baseUrl: $e');
     }
 
+    if (response.statusCode == 429) {
+      throw RateLimitException(_decodeJson(response)['detail'] as String? ?? 'Rate limit reached');
+    }
     if (response.statusCode != 200) {
       throw ApiException('Backend error (${response.statusCode}): ${response.body}');
     }
@@ -396,6 +409,7 @@ class ApiClient {
     required double latitude,
     required double longitude,
     double? tzOffset,
+    String? userId,
   }) async {
     final uri = Uri.parse('$baseUrl/api/v1/chart/analysis');
 
@@ -411,6 +425,7 @@ class ApiClient {
               'latitude': latitude,
               'longitude': longitude,
               if (tzOffset != null) 'tz_offset': tzOffset,
+              if (userId != null) 'user_id': userId,
             }),
           )
           .timeout(const Duration(seconds: 45));
@@ -418,11 +433,51 @@ class ApiClient {
       throw ApiException('Could not reach backend at $baseUrl: $e');
     }
 
+    if (response.statusCode == 429) {
+      throw RateLimitException(_decodeJson(response)['detail'] as String? ?? 'Rate limit reached');
+    }
     if (response.statusCode != 200) {
       throw ApiException('Backend error (${response.statusCode}): ${response.body}');
     }
 
     return _decodeJson(response)['analysis'] as String;
+  }
+
+  /// Compares two natal charts (Synastry tab): house overlays, inter-aspects,
+  /// and an AI reading covering both. Shares the backend's daily AI-call
+  /// limit with [fetchChartAnalysis] and [fetchSynthesis] via [userId].
+  Future<SynastryResult> fetchSynastry({
+    required SynastryPersonInput personA,
+    required SynastryPersonInput personB,
+    String? userId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/v1/chart/synastry');
+
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'person_a': personA.toJson(),
+              'person_b': personB.toJson(),
+              if (userId != null) 'user_id': userId,
+            }),
+          )
+          .timeout(const Duration(seconds: 45));
+    } catch (e) {
+      throw ApiException('Could not reach backend at $baseUrl: $e');
+    }
+
+    if (response.statusCode == 429) {
+      throw RateLimitException(_decodeJson(response)['detail'] as String? ?? 'Rate limit reached');
+    }
+    if (response.statusCode != 200) {
+      throw ApiException('Backend error (${response.statusCode}): ${response.body}');
+    }
+
+    return SynastryResult.fromJson(_decodeJson(response));
   }
 
   Future<Map<String, dynamic>> _get(Uri uri) async {

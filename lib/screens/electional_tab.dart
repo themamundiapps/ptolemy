@@ -6,8 +6,10 @@ import '../services/api_client.dart';
 import '../services/error_messages.dart';
 import '../services/reminder_service.dart';
 import '../theme.dart';
+import '../widgets/pro_status_builder.dart';
 import 'electional_helpers.dart';
 import 'electional_synthesis.dart';
+import 'paywall_screen.dart';
 
 enum _Step { theme, dateRange, results }
 
@@ -91,53 +93,34 @@ class _ThemeSelectionView extends StatelessWidget {
 
   const _ThemeSelectionView({required this.onSelected});
 
-  void _showLockedSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'This theme is available with Ptolemy Pro. Unlock all themes and support '
-              'traditional astrology.',
-              style: TextStyle(color: AppColors.bodyText, fontSize: 15, height: 1.4),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(onPressed: () {}, child: const Text('Unlock with Pro')),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final freeThemes = kElectionalThemes.where((t) => !t.isPro).toList();
     final proThemes = kElectionalThemes.where((t) => t.isPro).toList();
 
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('Find Your Best Moment', style: theme.textTheme.headlineMedium),
-        const SizedBox(height: 6),
-        const Text(
-          'Select the area of life you are seeking guidance for.',
-          style: TextStyle(color: AppColors.mutedWhite, fontSize: 13),
-        ),
-        const SizedBox(height: 24),
-        for (final t in freeThemes) _ThemeListRow(theme: t, onTap: () => onSelected(t)),
-        const SizedBox(height: 10),
-        Text('PRO', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13, letterSpacing: 1.5)),
-        for (final t in proThemes) _ThemeListRow(theme: t, onTap: () => _showLockedSheet(context)),
-      ],
+    return ProStatusBuilder(
+      builder: (context, isPro) => ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('Find Your Best Moment', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 6),
+          const Text(
+            'Select the area of life you are seeking guidance for.',
+            style: TextStyle(color: AppColors.mutedWhite, fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+          for (final t in freeThemes) _ThemeListRow(theme: t, locked: false, onTap: () => onSelected(t)),
+          const SizedBox(height: 10),
+          Text('PRO', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13, letterSpacing: 1.5)),
+          for (final t in proThemes)
+            _ThemeListRow(
+              theme: t,
+              locked: !isPro,
+              onTap: isPro ? () => onSelected(t) : () => showPaywallScreen(context),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -147,9 +130,10 @@ class _ThemeSelectionView extends StatelessWidget {
 /// presentation with a plainer, more deliberate list aesthetic.
 class _ThemeListRow extends StatelessWidget {
   final ElectionalTheme theme;
+  final bool locked;
   final VoidCallback onTap;
 
-  const _ThemeListRow({required this.theme, required this.onTap});
+  const _ThemeListRow({required this.theme, required this.locked, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -168,9 +152,9 @@ class _ThemeListRow extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 18),
                   ),
                 ),
-                if (theme.isPro)
+                if (locked)
                   const Text('🔒', style: TextStyle(fontSize: 15))
-                else
+                else if (!theme.isPro)
                   const Text(
                     'FREE',
                     style: TextStyle(color: AppColors.gold, fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w600),

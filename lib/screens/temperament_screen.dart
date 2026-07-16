@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/chart_models.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
+import '../widgets/pro_status_builder.dart';
+import 'paywall_screen.dart';
 
 const _calculationIntro =
     'Following the method described by Claudius Ptolemy in the Tetrabiblos (Book I, Chapters 4 and 8; '
@@ -168,14 +170,13 @@ class _TemperamentContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                _ProSection(
-                  title: 'Traditional Recommendations',
-                  // For now every user is treated as free, same as the
-                  // Electional theme paywall -- Pro entitlement isn't wired
-                  // up to anything real yet.
-                  isUnlocked: false,
-                  onLockedTap: () => _showTemperamentProSheet(context),
-                  children: [_RecommendationsBody(text: expanded.traditionalRecommendations.text)],
+                ProStatusBuilder(
+                  builder: (context, isPro) => _ProSection(
+                    title: 'Traditional Recommendations',
+                    isUnlocked: isPro,
+                    onLockedTap: () => showPaywallScreen(context),
+                    children: [_RecommendationsBody(text: expanded.traditionalRecommendations.text)],
+                  ),
                 ),
               ],
             );
@@ -208,32 +209,6 @@ class _TemperamentContent extends StatelessWidget {
       ],
     );
   }
-}
-
-void _showTemperamentProSheet(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: AppColors.surface,
-    builder: (context) => Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Traditional Recommendations are available with Ptolemy Pro. Unlock all themes and support '
-            'traditional astrology.',
-            style: TextStyle(color: AppColors.bodyText, fontSize: 15, height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(onPressed: () {}, child: const Text('Unlock with Pro')),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 /// A collapsible section whose header is either locked (tapping it calls

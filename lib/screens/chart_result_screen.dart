@@ -12,6 +12,7 @@ import '../widgets/planet_detail_sheet.dart';
 import 'analysis_tab.dart';
 import 'electional_tab.dart';
 import 'settings_screen.dart';
+import 'synastry_tab.dart';
 import 'temperament_screen.dart';
 import 'transits_tab.dart';
 
@@ -71,7 +72,7 @@ class ChartResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ptolemy'),
@@ -93,6 +94,7 @@ class ChartResultScreen extends StatelessWidget {
               Tab(text: 'Temperament'),
               Tab(text: 'Transits'),
               Tab(text: 'Analysis'),
+              Tab(text: 'Synastry'),
             ],
           ),
         ),
@@ -131,6 +133,13 @@ class ChartResultScreen extends StatelessWidget {
                     longitude: longitude,
                   ),
                   AnalysisTab(
+                    birthDate: birthDate,
+                    birthTime: birthTime,
+                    latitude: latitude,
+                    longitude: longitude,
+                    tzOffset: result.utcOffsetUsed,
+                  ),
+                  SynastryTab(
                     birthDate: birthDate,
                     birthTime: birthTime,
                     latitude: latitude,

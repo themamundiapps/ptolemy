@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +22,9 @@ class StorageService {
   static const _kChartJson = 'chart_json';
   static const _kAnalysisChartKey = 'chart_analysis_chart_key';
   static const _kAnalysisText = 'chart_analysis_text';
+  static const _kDeviceId = 'device_id';
+  static const _kSynastryKey = 'synastry_key';
+  static const _kSynastryJson = 'synastry_json';
 
   static Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -123,5 +127,59 @@ class StorageService {
     final prefs = await _prefs;
     await prefs.remove(_kAnalysisChartKey);
     await prefs.remove(_kAnalysisText);
+  }
+
+  /// A random id generated once per install and persisted locally, used to
+  /// key the backend's shared AI rate limit for guest (non-Google) sessions
+  /// -- without it, every guest user would share a single anonymous bucket.
+  static Future<String> getOrCreateDeviceId() async {
+    final prefs = await _prefs;
+    final existing = prefs.getString(_kDeviceId);
+    if (existing != null) return existing;
+
+    final random = Random.secure();
+    final id = List.generate(16, (_) => random.nextInt(16).toRadixString(16)).join();
+    await prefs.setString(_kDeviceId, id);
+    return id;
+  }
+
+  /// The identifier sent to AI-backed endpoints (Chart Analysis, Synastry,
+  /// Personal Synthesis) so the backend can enforce its shared daily limit
+  /// per user -- the signed-in Google id when available, otherwise this
+  /// device's persisted id.
+  static Future<String> resolveUserId() async {
+    final session = await loadSession();
+    if (session != null && session.mode == AuthMode.google && session.googleId != null) {
+      return session.googleId!;
+    }
+    return getOrCreateDeviceId();
+  }
+
+  /// Returns the cached Synastry reading only if it was generated while the
+  /// signed-in user's own chart matched [ownerKey] (same format as
+  /// [chartAnalysisKey]) -- so a reading computed against a since-changed
+  /// birth chart is never mistaken for a fresh one. The cache otherwise
+  /// holds just the single most recent comparison, whoever the second
+  /// person was; there's no need to key on the partner too since opening
+  /// the tab again is expected to resume the last comparison, not one
+  /// specific to a particular partner.
+  static Future<SynastryResult?> loadCachedSynastry(String ownerKey) async {
+    final prefs = await _prefs;
+    if (prefs.getString(_kSynastryKey) != ownerKey) return null;
+    final raw = prefs.getString(_kSynastryJson);
+    if (raw == null) return null;
+    return SynastryResult.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  static Future<void> saveSynastry(String ownerKey, SynastryResult result) async {
+    final prefs = await _prefs;
+    await prefs.setString(_kSynastryKey, ownerKey);
+    await prefs.setString(_kSynastryJson, jsonEncode(result.toJson()));
+  }
+
+  static Future<void> clearSynastry() async {
+    final prefs = await _prefs;
+    await prefs.remove(_kSynastryKey);
+    await prefs.remove(_kSynastryJson);
   }
 }

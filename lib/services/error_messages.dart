@@ -4,6 +4,9 @@ import 'api_client.dart';
 /// failures get distinct messages since the right next action differs (try
 /// a shorter range vs. just retry).
 String friendlyApiError(Object error) {
+  if (error is RateLimitException) {
+    return "You've reached today's analysis limit. Come back tomorrow for a fresh reading.";
+  }
   if (error is ApiTimeoutException) {
     return 'The scan is taking longer than expected — try a shorter date range.';
   }

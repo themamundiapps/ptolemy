@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ptolemy/screens/analysis_tab.dart';
 import 'package:ptolemy/services/api_client.dart';
+import 'package:ptolemy/services/billing_service.dart';
 import 'package:ptolemy/services/storage_service.dart';
 
 // Deliberately unreachable (port 1 is never a live HTTP server) so the
@@ -29,6 +30,7 @@ class _DeferredApiClient extends ApiClient {
     required double latitude,
     required double longitude,
     double? tzOffset,
+    String? userId,
   }) => completer.future;
 }
 
@@ -37,6 +39,13 @@ Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    // AnalysisTab is Pro-gated; these tests exercise the unlocked content,
+    // not the paywall lock screen (that's covered separately).
+    BillingService.instance.debugIsProOverride = true;
+  });
+
+  tearDown(() {
+    BillingService.instance.debugIsProOverride = null;
   });
 
   testWidgets('shows the title and a Generate button when nothing is cached', (tester) async {
@@ -73,7 +82,7 @@ void main() {
 
     deferred.completer.completeError(ApiException('connection refused'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Could not generate a reading'), findsOneWidget);
+    expect(find.textContaining('Calculations temporarily unavailable'), findsOneWidget);
     expect(find.text('Generate My Reading'), findsOneWidget);
   });
 
@@ -89,7 +98,7 @@ void main() {
 
     await tester.tap(find.text('Generate My Reading'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Could not generate a reading'), findsOneWidget);
+    expect(find.textContaining('Calculations temporarily unavailable'), findsOneWidget);
     expect(find.text('Generate My Reading'), findsOneWidget);
   });
 
@@ -143,5 +152,20 @@ void main() {
 
     expect(find.text('A reading for a totally different chart.'), findsNothing);
     expect(find.text('Generate My Reading'), findsOneWidget);
+  });
+
+  testWidgets('shows the paywall lock instead of content when the user is not Pro', (tester) async {
+    BillingService.instance.debugIsProOverride = false;
+    await tester.pumpWidget(_wrap(AnalysisTab(
+      birthDate: '1990-06-15',
+      birthTime: '14:30',
+      latitude: -25.4284,
+      longitude: -49.2733,
+      apiClient: _unreachableClient,
+    )));
+    await tester.pump();
+
+    expect(find.text('Unlock with Pro'), findsOneWidget);
+    expect(find.text('Generate My Reading'), findsNothing);
   });
 }
