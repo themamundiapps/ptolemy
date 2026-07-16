@@ -8,7 +8,7 @@ the same reason) -- everything short of the network call is fully tested.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import analysis
+from app.services import analysis, rate_limit
 
 client = TestClient(app)
 
@@ -132,6 +132,13 @@ def test_analysis_endpoint_surfaces_ai_failure_as_503(monkeypatch):
 
     response = client.post("/api/v1/chart/analysis", json=_NATAL_PAYLOAD)
     assert response.status_code == 503
+
+
+def test_analysis_endpoint_rejects_when_rate_limited(monkeypatch):
+    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id: False)
+    response = client.post("/api/v1/chart/analysis", json={**_NATAL_PAYLOAD, "user_id": "some-user"})
+    assert response.status_code == 429
+    assert response.json()["detail"] == rate_limit.LIMIT_MESSAGE
 
 
 def test_analysis_endpoint_orientality_is_never_set_for_the_sun(monkeypatch):

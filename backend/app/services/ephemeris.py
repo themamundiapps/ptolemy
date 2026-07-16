@@ -259,6 +259,47 @@ def find_planet_angle_aspects(
     return aspects
 
 
+# Synastry orb table -- tighter than natal ASPECT_ORBS since these describe
+# a relationship between two separate charts rather than one nativity.
+SYNASTRY_ASPECT_ORBS = {
+    "Sun": 8,
+    "Moon": 8,
+    "Mercury": 5,
+    "Venus": 5,
+    "Mars": 5,
+    "Jupiter": 6,
+    "Saturn": 6,
+}
+
+
+def find_synastry_aspects(
+    longitudes_a: dict[str, float], longitudes_b: dict[str, float]
+) -> list[dict]:
+    """All major aspects between every planet of chart A and every planet of
+    chart B (49 combinations for the 7 classical planets), using the
+    synastry orb table, averaged per pair the same way find_aspects() does
+    for a single natal chart."""
+    aspects = []
+    for name_a, lon_a in longitudes_a.items():
+        for name_b, lon_b in longitudes_b.items():
+            separation = angular_separation(lon_a, lon_b)
+            allowed_orb = (SYNASTRY_ASPECT_ORBS[name_a] + SYNASTRY_ASPECT_ORBS[name_b]) / 2
+
+            match = best_aspect_match(separation, allowed_orb)
+            if match is not None:
+                aspect_name, orb = match
+                aspects.append(
+                    {
+                        "planet_a": name_a,
+                        "planet_b": name_b,
+                        "aspect": aspect_name,
+                        "angle": separation,
+                        "orb": orb,
+                    }
+                )
+    return aspects
+
+
 def is_diurnal(sun_house: int) -> bool:
     """Sect: Sun above the horizon (whole-sign houses 7-12) = diurnal chart."""
     return sun_house in range(7, 13)

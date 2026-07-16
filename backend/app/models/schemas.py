@@ -83,13 +83,61 @@ class SynthesisRequest(BaseModel):
     sect: str
     dignities: list[str] = Field(default_factory=list)
     aspects: list[str] = Field(default_factory=list)
+    user_id: str | None = Field(None, description="See ChartAnalysisRequest.user_id")
 
 
 class SynthesisResponse(BaseModel):
     synthesis: str
 
 
+class ChartAnalysisRequest(ChartRequest):
+    user_id: str | None = Field(
+        None,
+        description="Google account id or locally-generated device id, used to enforce the shared "
+        "daily AI-call limit across Chart Analysis, Synastry, and Personal Synthesis. Omitted calls "
+        "(e.g. tests) are not rate-limited.",
+    )
+
+
 class ChartAnalysisResponse(BaseModel):
+    analysis: str
+
+
+class SynastryPersonRequest(BaseModel):
+    name: str | None = Field(None, description="Optional given name for this native, used in the AI reading")
+    date: str = Field(..., description="Birth date, format YYYY-MM-DD")
+    time: str = Field(..., description="Birth time, format HH:MM (24h)")
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    tz_offset: float | None = Field(None, description="Manual UTC offset override")
+
+
+class SynastryRequest(BaseModel):
+    person_a: SynastryPersonRequest
+    person_b: SynastryPersonRequest
+    user_id: str | None = Field(None, description="See ChartAnalysisRequest.user_id")
+
+
+class SynastryHouseOverlay(BaseModel):
+    planet: str
+    from_chart: str = Field(..., description="'A' or 'B' -- whose planet this is")
+    sign: str
+    house: int = Field(..., description="The house of the *other* native's chart this planet falls into")
+
+
+class SynastryAspect(BaseModel):
+    planet_a: str
+    planet_b: str
+    aspect: str
+    angle: float
+    orb: float
+
+
+class SynastryResponse(BaseModel):
+    person_a_name: str
+    person_b_name: str
+    house_overlays: list[SynastryHouseOverlay]
+    aspects: list[SynastryAspect]
     analysis: str
 
 

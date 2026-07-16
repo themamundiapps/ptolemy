@@ -2,21 +2,88 @@ from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import (
     Aspect,
+    ChartAnalysisRequest,
     ChartAnalysisResponse,
     ChartRequest,
     ChartResponse,
     HouseLordEntry,
     HouseLordsResponse,
     MoonPosition,
+    SynastryAspect,
+    SynastryHouseOverlay,
+    SynastryRequest,
+    SynastryResponse,
     Transit,
     TransitsRequest,
     TransitsResponse,
     ZodiacPosition,
 )
-from app.services import analysis, ephemeris, temperament, transits as transits_service
+from app.services import analysis, ephemeris, rate_limit, synastry as synastry_service, temperament
+from app.services import transits as transits_service
 from app.services import timezone as tz_resolver
 
 router = APIRouter(prefix="/chart", tags=["chart"])
+
+
+def _resolve_tz_offset(birth) -> float:
+    """birth: any object with .tz_offset/.latitude/.longitude/.date/.time
+    attributes -- ChartRequest and SynastryPersonRequest both satisfy this
+    structurally, so this works for either without a shared base class."""
+    if birth.tz_offset is not None:
+        return birth.tz_offset
+    try:
+        _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(birth.latitude, birth.longitude, birth.date, birth.time)
+    except tz_resolver.TimezoneLookupError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return tz_offset
+
+
+def _compute_natal(date: str, time: str, latitude: float, longitude: float, tz_offset: float) -> dict:
+    """Shared natal-chart computation (positions, dignities, temperament)
+    used by both /chart/analysis (one nativity) and /chart/synastry (two)."""
+    jd_ut = ephemeris.julian_day_ut(date, time, tz_offset)
+    asc_lon, mc_lon = ephemeris.calc_angles(jd_ut, latitude, longitude)
+    asc_sign, _asc_deg = ephemeris.sign_and_degree(asc_lon)
+    mc_sign, _mc_deg = ephemeris.sign_and_degree(mc_lon)
+
+    planets: dict[str, ZodiacPosition] = {}
+    planet_dicts: dict[str, dict] = {}
+    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
+        lon, retrograde = ephemeris.calc_planet(jd_ut, body_id)
+        sign, deg = ephemeris.sign_and_degree(lon)
+        house = ephemeris.whole_sign_house(lon, asc_lon)
+        planets[name] = ZodiacPosition(
+            longitude=lon,
+            sign=sign,
+            sign_longitude=deg,
+            house=house,
+            retrograde=retrograde,
+            dignities=ephemeris.essential_dignities(name, sign),
+        )
+        planet_dicts[name] = {"longitude": lon, "sign": sign, "house": house}
+
+    diurnal = ephemeris.is_diurnal(planets["Sun"].house)
+    sun_lon = planets["Sun"].longitude
+    moon_lon = planets["Moon"].longitude
+
+    temperament_result = temperament.calculate(
+        asc_sign=asc_sign,
+        planets=planet_dicts,
+        sun_longitude=sun_lon,
+        moon_longitude=moon_lon,
+    )
+
+    return {
+        "jd_ut": jd_ut,
+        "asc_lon": asc_lon,
+        "asc_sign": asc_sign,
+        "mc_sign": mc_sign,
+        "planets": planets,
+        "diurnal": diurnal,
+        "sun_lon": sun_lon,
+        "moon_lon": moon_lon,
+        "temperament_label": temperament_result["temperament"],
+    }
 
 
 @router.post("/positions", response_model=ChartResponse)
@@ -161,50 +228,22 @@ def get_house_lords(request: ChartRequest) -> HouseLordsResponse:
 
 
 @router.post("/analysis", response_model=ChartAnalysisResponse)
-def get_chart_analysis(request: ChartRequest) -> ChartAnalysisResponse:
-    if request.tz_offset is not None:
-        tz_offset = request.tz_offset
-    else:
-        try:
-            _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(
-                request.latitude, request.longitude, request.date, request.time
-            )
-        except tz_resolver.TimezoneLookupError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+def get_chart_analysis(request: ChartAnalysisRequest) -> ChartAnalysisResponse:
+    if not rate_limit.check_and_consume(request.user_id):
+        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
 
-    jd_ut = ephemeris.julian_day_ut(request.date, request.time, tz_offset)
-    asc_lon, mc_lon = ephemeris.calc_angles(jd_ut, request.latitude, request.longitude)
-    asc_sign, _asc_deg = ephemeris.sign_and_degree(asc_lon)
-    mc_sign, _mc_deg = ephemeris.sign_and_degree(mc_lon)
+    tz_offset = _resolve_tz_offset(request)
+    native = _compute_natal(request.date, request.time, request.latitude, request.longitude, tz_offset)
 
-    planets: dict[str, ZodiacPosition] = {}
-    planet_dicts: dict[str, dict] = {}
-    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
-        lon, retrograde = ephemeris.calc_planet(jd_ut, body_id)
-        sign, deg = ephemeris.sign_and_degree(lon)
-        house = ephemeris.whole_sign_house(lon, asc_lon)
-        planets[name] = ZodiacPosition(
-            longitude=lon,
-            sign=sign,
-            sign_longitude=deg,
-            house=house,
-            retrograde=retrograde,
-            dignities=ephemeris.essential_dignities(name, sign),
-        )
-        planet_dicts[name] = {"longitude": lon, "sign": sign, "house": house}
-
-    diurnal = ephemeris.is_diurnal(planets["Sun"].house)
-    sun_lon = planets["Sun"].longitude
-    moon_lon = planets["Moon"].longitude
+    asc_lon = native["asc_lon"]
+    asc_sign = native["asc_sign"]
+    mc_sign = native["mc_sign"]
+    planets = native["planets"]
+    diurnal = native["diurnal"]
+    sun_lon = native["sun_lon"]
+    moon_lon = native["moon_lon"]
 
     season_name, _season_qualities = temperament.season(sun_lon)
-
-    temperament_result = temperament.calculate(
-        asc_sign=asc_sign,
-        planets=planet_dicts,
-        sun_longitude=sun_lon,
-        moon_longitude=moon_lon,
-    )
 
     planet_prompt_entries = []
     for name, pos in planets.items():
@@ -239,7 +278,7 @@ def get_chart_analysis(request: ChartRequest) -> ChartAnalysisResponse:
         midheaven_sign=mc_sign,
         season=season_name,
         sect="Diurnal" if diurnal else "Nocturnal",
-        temperament_label=temperament_result["temperament"],
+        temperament_label=native["temperament_label"],
         planets=planet_prompt_entries,
         house_lord_lines=house_lord_lines,
         aspects=aspects,
@@ -254,6 +293,75 @@ def get_chart_analysis(request: ChartRequest) -> ChartAnalysisResponse:
     except analysis.AnalysisError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     return ChartAnalysisResponse(analysis=text)
+
+
+@router.post("/synastry", response_model=SynastryResponse)
+def get_synastry(request: SynastryRequest) -> SynastryResponse:
+    if not rate_limit.check_and_consume(request.user_id):
+        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
+
+    tz_offset_a = _resolve_tz_offset(request.person_a)
+    tz_offset_b = _resolve_tz_offset(request.person_b)
+
+    native_a = _compute_natal(
+        request.person_a.date, request.person_a.time, request.person_a.latitude, request.person_a.longitude, tz_offset_a
+    )
+    native_b = _compute_natal(
+        request.person_b.date, request.person_b.time, request.person_b.latitude, request.person_b.longitude, tz_offset_b
+    )
+
+    name_a = request.person_a.name or "Native 1"
+    name_b = request.person_b.name or "Native 2"
+
+    # House overlays: each of A's planets in B's whole-sign houses, and each
+    # of B's planets in A's -- 14 placements total for the 7 classical planets.
+    house_overlays: list[SynastryHouseOverlay] = []
+    for name, pos in native_a["planets"].items():
+        house_overlays.append(
+            SynastryHouseOverlay(
+                planet=name, from_chart="A", sign=pos.sign, house=ephemeris.whole_sign_house(pos.longitude, native_b["asc_lon"])
+            )
+        )
+    for name, pos in native_b["planets"].items():
+        house_overlays.append(
+            SynastryHouseOverlay(
+                planet=name, from_chart="B", sign=pos.sign, house=ephemeris.whole_sign_house(pos.longitude, native_a["asc_lon"])
+            )
+        )
+
+    longitudes_a = {name: pos.longitude for name, pos in native_a["planets"].items()}
+    longitudes_b = {name: pos.longitude for name, pos in native_b["planets"].items()}
+    raw_aspects = sorted(ephemeris.find_synastry_aspects(longitudes_a, longitudes_b), key=lambda a: a["orb"])
+    inter_aspects = [SynastryAspect(**a) for a in raw_aspects]
+
+    def _planet_prompt_entries(native: dict) -> list[dict]:
+        return [{"name": n, "sign": p.sign, "house": p.house, "dignities": p.dignities} for n, p in native["planets"].items()]
+
+    prompt = synastry_service.build_synastry_prompt(
+        name_a=name_a,
+        asc_sign_a=native_a["asc_sign"],
+        temperament_a=native_a["temperament_label"],
+        planets_a=_planet_prompt_entries(native_a),
+        name_b=name_b,
+        asc_sign_b=native_b["asc_sign"],
+        temperament_b=native_b["temperament_label"],
+        planets_b=_planet_prompt_entries(native_b),
+        house_overlays=[{"planet": o.planet, "from_chart": o.from_chart, "house": o.house} for o in house_overlays],
+        inter_aspects=[{"planet_a": a.planet_a, "planet_b": a.planet_b, "aspect": a.aspect, "orb": a.orb} for a in inter_aspects],
+    )
+
+    try:
+        text = synastry_service.generate_synastry_analysis(prompt)
+    except synastry_service.SynastryError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    return SynastryResponse(
+        person_a_name=name_a,
+        person_b_name=name_b,
+        house_overlays=house_overlays,
+        aspects=inter_aspects,
+        analysis=text,
+    )
 
 
 @router.post("/transits", response_model=TransitsResponse)
