@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/chart_models.dart';
 import '../services/api_client.dart';
+import '../services/chart_share_service.dart';
 import '../theme.dart';
 import '../widgets/aspect_detail_sheet.dart';
 import '../widgets/chart_wheel.dart';
@@ -53,7 +54,7 @@ void _showHouseLordDetails(BuildContext context, HouseLordEntry entry) {
   );
 }
 
-class ChartResultScreen extends StatelessWidget {
+class ChartResultScreen extends StatefulWidget {
   final ChartResponse result;
   final String birthDate;
   final String birthTime;
@@ -70,13 +71,56 @@ class ChartResultScreen extends StatelessWidget {
   });
 
   @override
+  State<ChartResultScreen> createState() => _ChartResultScreenState();
+}
+
+class _ChartResultScreenState extends State<ChartResultScreen> {
+  final _chartTabKey = GlobalKey<_ChartTabState>();
+  bool _sharing = false;
+
+  Future<void> _shareChart() async {
+    final wheelBoundaryKey = _chartTabKey.currentState?.wheelBoundaryKey;
+    if (wheelBoundaryKey == null || _sharing) return;
+
+    setState(() => _sharing = true);
+    try {
+      await shareNatalChart(context: context, wheelBoundaryKey: wheelBoundaryKey, result: widget.result);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not create share image. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final result = widget.result;
+    final birthDate = widget.birthDate;
+    final birthTime = widget.birthTime;
+    final latitude = widget.latitude;
+    final longitude = widget.longitude;
+
     return DefaultTabController(
       length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ptolemy'),
           actions: [
+            IconButton(
+              icon: _sharing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold),
+                    )
+                  : const Icon(Icons.ios_share, color: AppColors.gold),
+              tooltip: 'Share chart',
+              onPressed: _sharing ? null : _shareChart,
+            ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, color: AppColors.gold),
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
@@ -105,6 +149,7 @@ class ChartResultScreen extends StatelessWidget {
               child: TabBarView(
                 children: [
                   _ChartTab(
+                    key: _chartTabKey,
                     result: result,
                     birthDate: birthDate,
                     birthTime: birthTime,
@@ -169,6 +214,7 @@ class _ChartTab extends StatefulWidget {
     required this.birthTime,
     required this.latitude,
     required this.longitude,
+    super.key,
   });
 
   @override
@@ -177,6 +223,11 @@ class _ChartTab extends StatefulWidget {
 
 class _ChartTabState extends State<_ChartTab> {
   late final Future<List<HouseLordEntry>> _houseLordsFuture;
+
+  /// Attached to the [RepaintBoundary] around the chart wheel below so the
+  /// share feature (triggered from the AppBar, outside this tab) can capture
+  /// it as an image on demand.
+  final wheelBoundaryKey = GlobalKey();
 
   @override
   void initState() {
@@ -215,11 +266,14 @@ class _ChartTabState extends State<_ChartTab> {
         const SizedBox(height: 4),
         Text('Timezone: ${_timezoneLabel()}', style: theme.textTheme.bodyMedium?.copyWith(color: AppColors.mutedText)),
         const SizedBox(height: 20),
-        AspectRatio(
-          aspectRatio: 1,
-          child: ChartWheel(
-            result: result,
-            onPlanetTap: (name) => _showPlanetDetails(context, result, name),
+        RepaintBoundary(
+          key: wheelBoundaryKey,
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: ChartWheel(
+              result: result,
+              onPlanetTap: (name) => _showPlanetDetails(context, result, name),
+            ),
           ),
         ),
         const SizedBox(height: 24),
@@ -330,6 +384,17 @@ const _aspectSymbols = {
 
 const _nameColor = Color(0xFFE8E8E8);
 
+/// Small muted chevron appended to every tappable row (planets, lots, house
+/// lords, aspects) to signal that tapping opens a detail sheet.
+class _TrailingChevron extends StatelessWidget {
+  const _TrailingChevron();
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(Icons.chevron_right, size: 18, color: AppColors.gold.withValues(alpha: 0.5));
+  }
+}
+
 class _AspectRow extends StatelessWidget {
   final Aspect aspect;
 
@@ -363,6 +428,8 @@ class _AspectRow extends StatelessWidget {
               ),
             ),
             Expanded(child: Text(aspect.planetB, style: nameStyle, textAlign: TextAlign.right)),
+            const SizedBox(width: 8),
+            const _TrailingChevron(),
           ],
         ),
       ),
@@ -398,6 +465,8 @@ class _PlanetRow extends StatelessWidget {
             ),
             if (dignityLabel.isNotEmpty)
               Text(dignityLabel, style: const TextStyle(color: AppColors.gold, fontSize: 12)),
+            const SizedBox(width: 6),
+            const _TrailingChevron(),
           ],
         ),
       ),
@@ -431,6 +500,8 @@ class _HouseLordRow extends StatelessWidget {
             ),
             if (dignityLabel.isNotEmpty)
               Text(dignityLabel, style: const TextStyle(color: AppColors.mutedGold, fontSize: 12)),
+            const SizedBox(width: 6),
+            const _TrailingChevron(),
           ],
         ),
       ),
@@ -457,6 +528,8 @@ class _LotRow extends StatelessWidget {
             Expanded(
               child: Text('${position.signLongitude.toStringAsFixed(2)}° ${position.sign} · House ${position.house}'),
             ),
+            const SizedBox(width: 6),
+            const _TrailingChevron(),
           ],
         ),
       ),
