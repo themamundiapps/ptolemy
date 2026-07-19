@@ -6,6 +6,7 @@ import '../services/error_messages.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../widgets/city_search_field.dart';
+import '../widgets/example_reading.dart';
 import '../widgets/pro_status_builder.dart';
 import 'paywall_screen.dart';
 
@@ -17,6 +18,16 @@ const _monthNames = [
 const _planetOrder = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'];
 
 const _subtitleStyle = TextStyle(color: AppColors.mutedText, fontSize: 14, height: 1.5);
+
+const _exampleSynastryText = '''
+The connection between these two nativities is marked above all by the conjunction of the first native's Venus with the second native's Ascendant — one of the most traditionally significant inter-aspects for romantic connection, indicating that the first native's Venusian quality is immediately and viscerally felt by the second as part of their personal world. Valens considers such configurations productive of lasting attachment.
+
+The Sun of the first native falls in the seventh house of the second — a placement that makes the first native's solar authority and public presence a defining feature of the second native's experience of significant relationship. The second native tends to see the first through a lens of admiration and, at times, the particular tension that comes from being in proximity to someone whose solar force exceeds one's own.
+
+The square between the first native's Mars and the second native's Moon introduces a recurring friction: the first native's directness and martial energy periodically disrupts the second native's emotional equilibrium. This is not a fatal configuration — Valens notes that squares between Mars and the Moon produce intensity rather than permanent damage — but it requires conscious management rather than wishful thinking.
+
+The trine between Jupiter of the first native and Saturn of the second is the most stabilizing aspect in the comparison: it suggests that the first native's expansive optimism finds genuine structural support in the second native's discipline and endurance, producing a connection that improves over time rather than burning out quickly.
+''';
 
 enum _Step { empty, form, loading, results }
 
@@ -138,6 +149,29 @@ class _SynastryTabState extends State<SynastryTab> {
     });
   }
 
+  /// Gates [_newComparison] behind a confirmation whenever it would discard
+  /// an already-computed comparison -- "New Comparison" used to clear the
+  /// cache immediately on tap, so backing out of the new-partner form (there
+  /// is no cancel button in it) silently lost the old one with no way back.
+  Future<void> _confirmNewComparison() async {
+    final previousPartner = _result?.personBName;
+    if (previousPartner != null) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Replace comparison?'),
+          content: Text('This will replace your current comparison with $previousPartner. Continue?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Replace')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    await _newComparison();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ProStatusBuilder(
@@ -152,7 +186,7 @@ class _SynastryTabState extends State<SynastryTab> {
           case _Step.loading:
             return const _LoadingView();
           case _Step.results:
-            return _ResultsView(result: _result!, onNewComparison: _newComparison);
+            return _ResultsView(result: _result!, onNewComparison: _confirmNewComparison);
         }
       },
     );
@@ -199,25 +233,37 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _OverlappingCirclesIcon(),
-            const SizedBox(height: 20),
-            Text('Synastry', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            const Text(
-              "Compare your natal chart with another person's to receive a traditional reading of your connection.",
-              style: _subtitleStyle,
-              textAlign: TextAlign.center,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _OverlappingCirclesIcon(),
+          const SizedBox(height: 20),
+          Text('Synastry', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          const Text(
+            "Compare your natal chart with another person's to receive a traditional reading of your connection.",
+            style: _subtitleStyle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            'What a Synastry reading looks like:',
+            style: TextStyle(color: AppColors.mutedText, fontStyle: FontStyle.italic, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(height: 28),
-            SizedBox(width: 220, child: FilledButton(onPressed: onAddPerson, child: const Text('Add a Person'))),
-          ],
-        ),
+            child: const ExampleReading(text: _exampleSynastryText, showLabel: false),
+          ),
+          const SizedBox(height: 28),
+          SizedBox(width: 220, child: FilledButton(onPressed: onAddPerson, child: const Text('Add a Person'))),
+        ],
       ),
     );
   }
@@ -316,7 +362,7 @@ class _FormViewState extends State<_FormView> {
     final time = _time!;
     final dateStr = '${date.year.toString().padLeft(4, '0')}-${_twoDigits(date.month)}-${_twoDigits(date.day)}';
     widget.onSubmit(
-      partnerName: _nameController.text.trim().isEmpty ? null : _nameController.text.trim(),
+      partnerName: _nameController.text.trim().isEmpty ? 'Your partner' : _nameController.text.trim(),
       partnerDate: dateStr,
       partnerTime: _formatTime(time),
       partnerLatitude: city.latitude,
@@ -338,7 +384,7 @@ class _FormViewState extends State<_FormView> {
             const SizedBox(height: 20),
             TextFormField(
               controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name (optional)'),
+              decoration: const InputDecoration(labelText: 'Their name (optional)'),
             ),
             const SizedBox(height: 20),
             CitySearchField(
@@ -383,6 +429,31 @@ class _PickerField extends StatelessWidget {
   }
 }
 
+// Loose, sentence-friendly verb for each aspect -- distinct from
+// _aspectSymbols below, which is for the compact glyph shown in the
+// inter-aspect list rows.
+const _aspectVerbs = {
+  'conjunction': 'conjunct',
+  'sextile': 'sextile',
+  'square': 'square',
+  'trine': 'trine',
+  'opposition': 'oppose',
+};
+
+const _angleFullNames = {'ASC': 'Ascendant', 'MC': 'Midheaven'};
+
+/// One line summarizing the connection from its strongest (lowest-orb) hits
+/// -- [result.aspects] already arrives orb-sorted from the backend. Null
+/// when there's nothing within orb to summarize.
+String? _compatibilitySummary(SynastryResult result) {
+  if (result.aspects.isEmpty) return null;
+  return result.aspects.take(2).map((a) {
+    final verb = _aspectVerbs[a.aspect] ?? a.aspect;
+    final target = a.isAngle ? (_angleFullNames[a.planetB] ?? a.planetB) : a.planetB;
+    return '${a.planetA} $verb $target';
+  }).join(' · ');
+}
+
 class _ResultsView extends StatelessWidget {
   final SynastryResult result;
   final VoidCallback onNewComparison;
@@ -391,14 +462,20 @@ class _ResultsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final summary = _compatibilitySummary(result);
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
         Text('${result.personAName} & ${result.personBName}', style: Theme.of(context).textTheme.headlineLarge),
+        if (summary != null) ...[
+          const SizedBox(height: 6),
+          Text(summary, style: const TextStyle(color: AppColors.mutedGold, fontStyle: FontStyle.italic, fontSize: 13)),
+        ],
         const SizedBox(height: 20),
         _SynastryAnalysisBody(text: result.analysis),
         const SizedBox(height: 12),
-        _PlanetaryDetails(result: result),
+        _HouseOverlaysSection(result: result),
+        _InterAspectsSection(result: result),
         const SizedBox(height: 24),
         FilledButton(onPressed: onNewComparison, child: const Text('New Comparison')),
       ],
@@ -456,10 +533,10 @@ const _aspectSymbols = {
   'opposition': '"',
 };
 
-class _PlanetaryDetails extends StatelessWidget {
+class _HouseOverlaysSection extends StatelessWidget {
   final SynastryResult result;
 
-  const _PlanetaryDetails({required this.result});
+  const _HouseOverlaysSection({required this.result});
 
   @override
   Widget build(BuildContext context) {
@@ -476,29 +553,48 @@ class _PlanetaryDetails extends StatelessWidget {
       collapsedIconColor: AppColors.gold,
       shape: const Border(),
       collapsedShape: const Border(),
-      title: Text('Planetary Details', style: Theme.of(context).textTheme.titleMedium),
+      title: Text('House Overlays', style: Theme.of(context).textTheme.titleMedium),
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: Text('House Overlays', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 15)),
-        ),
         for (final o in overlaysA)
           _OverlayRow(planet: o.planet, house: o.house, ownerName: result.personAName, otherName: result.personBName),
         for (final o in overlaysB)
           _OverlayRow(planet: o.planet, house: o.house, ownerName: result.personBName, otherName: result.personAName),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: Text('Inter-aspects', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 15)),
-        ),
+      ],
+    );
+  }
+}
+
+class _InterAspectsSection extends StatelessWidget {
+  final SynastryResult result;
+
+  const _InterAspectsSection({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      initiallyExpanded: false,
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      iconColor: AppColors.gold,
+      collapsedIconColor: AppColors.gold,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: Text('Inter-aspects', style: Theme.of(context).textTheme.titleMedium),
+      children: [
         if (result.aspects.isEmpty)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: Text('No major inter-aspects within orb.', style: TextStyle(color: AppColors.mutedText)),
           )
-        else
+        else ...[
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('★ marks an aspect to a chart angle (ASC/MC) — traditionally the most significant kind.',
+                style: TextStyle(color: AppColors.mutedText, fontSize: 11, fontStyle: FontStyle.italic)),
+          ),
           for (final a in result.aspects)
             _InterAspectRow(aspect: a, personAName: result.personAName, personBName: result.personBName),
+        ],
       ],
     );
   }
@@ -534,14 +630,26 @@ class _InterAspectRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final symbol = _aspectSymbols[aspect.aspect] ?? aspect.aspect;
+    // planet_a always belongs to whichever native from_chart names -- for
+    // plain planet-to-planet aspects that's always native A (see
+    // app/routers/chart.py), but for angle aspects it can be either, since
+    // both directions (A's planets vs B's angles, and B's vs A's) are
+    // checked. The second side always belongs to the other native.
+    final ownerName = aspect.fromChart == 'A' ? personAName : personBName;
+    final otherName = aspect.fromChart == 'A' ? personBName : personAName;
+    final targetLabel = aspect.isAngle ? 'natal ${aspect.planetB}' : aspect.planetB;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white12))),
       child: Row(
         children: [
+          SizedBox(
+            width: 14,
+            child: aspect.isAngle ? const Text('★', style: TextStyle(color: AppColors.gold, fontSize: 12)) : null,
+          ),
           Expanded(
-            child: Text('${aspect.planetA} ($personAName)', style: const TextStyle(color: AppColors.bodyText, fontSize: 14)),
+            child: Text('${aspect.planetA} ($ownerName)', style: const TextStyle(color: AppColors.bodyText, fontSize: 14)),
           ),
           SizedBox(
             width: 36,
@@ -553,7 +661,7 @@ class _InterAspectRow extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              '${aspect.planetB} ($personBName)',
+              '$targetLabel ($otherName)',
               style: const TextStyle(color: AppColors.bodyText, fontSize: 14),
               textAlign: TextAlign.right,
             ),
@@ -571,31 +679,31 @@ class _LockedSynastry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Synastry', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            const Text(
-              "Compare your natal chart with another person's to receive a traditional reading of your connection.",
-              style: _subtitleStyle,
-              textAlign: TextAlign.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Synastry', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          const Text(
+            "Compare your natal chart with another person's to receive a traditional reading of your connection.",
+            style: _subtitleStyle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          const Icon(Icons.lock_outline, color: AppColors.gold, size: 28),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 220,
+            child: FilledButton(
+              onPressed: () => showPaywallScreen(context),
+              child: const Text('Unlock with Ptolemy Pro'),
             ),
-            const SizedBox(height: 24),
-            const Icon(Icons.lock_outline, color: AppColors.gold, size: 28),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: 220,
-              child: FilledButton(
-                onPressed: () => showPaywallScreen(context),
-                child: const Text('Unlock with Ptolemy Pro'),
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 40),
+          const ExampleReading(text: _exampleSynastryText),
+        ],
       ),
     );
   }

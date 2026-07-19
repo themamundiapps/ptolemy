@@ -4,10 +4,21 @@ import '../services/api_client.dart';
 import '../services/error_messages.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../widgets/example_reading.dart';
 import '../widgets/pro_status_builder.dart';
 import 'paywall_screen.dart';
 
 const _subtitleStyle = TextStyle(color: AppColors.mutedText, fontSize: 14, height: 1.5);
+
+const _exampleAnalysisText = '''
+This is a diurnal nativity of considerable solar force. The Sun, lord of the chart by sect, occupies its own domicile in Leo and is placed at the Midheaven — a configuration Valens considers among the most publicly distinguished, producing natives known by name in many places and thought worthy of honor and rank. The Moon, applying to a trine with Jupiter in the eleventh house, adds genuine popular goodwill and the support of powerful friends to an already prominent nativity.
+
+Saturn, though a malefic, is well-placed in Libra — its exaltation — and governs the ninth house of philosophy and long journeys. This tempering of the solar fire by Saturnine discipline produces not mere ambition but the patient, methodical pursuit of lasting distinction. The native is not content with recognition that does not endure.
+
+The Lot of Fortune falls in the fifth house, receiving a trine from Jupiter: material fortune comes through creative expression and the goodwill of those in positions of authority. The native tends to prosper most when their genuine gifts are visible rather than concealed.
+
+Overall, this is a nativity of public distinction, intellectual authority, and sustained ambition — a chart in which the solar principle operates at its fullest, tempered by Saturnine endurance and supported by genuine Jovian good fortune.
+''';
 
 /// The Analysis tab: a single AI-generated full natal chart reading, shown
 /// alongside Chart, Electional, and Temperament on the main chart screen.
@@ -152,7 +163,7 @@ class _GenerateBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -167,6 +178,8 @@ class _GenerateBody extends StatelessWidget {
           FilledButton(onPressed: onGenerate, child: const Text('Generate My Reading')),
           const SizedBox(height: 10),
           const Text('This may take a moment', style: TextStyle(color: AppColors.mutedText, fontSize: 12)),
+          const SizedBox(height: 40),
+          const ExampleReading(text: _exampleAnalysisText),
         ],
       ),
     );
@@ -236,29 +249,29 @@ class _LockedAnalysis extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Chart Analysis', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            const Text(
-              "A complete reading of your natal chart by Ptolemy's AI — considering all planets, "
-              'houses, aspects, house lords, and temperament together.',
-              style: _subtitleStyle,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            const Icon(Icons.lock_outline, color: AppColors.gold, size: 28),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: 220,
-              child: FilledButton(onPressed: () => showPaywallScreen(context), child: const Text('Unlock with Pro')),
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Chart Analysis', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          const Text(
+            'A complete reading of your natal chart, considering all planets, '
+            'houses, aspects, house lords, and temperament together.',
+            style: _subtitleStyle,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          const Icon(Icons.lock_outline, color: AppColors.gold, size: 28),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 220,
+            child: FilledButton(onPressed: () => showPaywallScreen(context), child: const Text('Unlock with Pro')),
+          ),
+          const SizedBox(height: 40),
+          const ExampleReading(text: _exampleAnalysisText),
+        ],
       ),
     );
   }

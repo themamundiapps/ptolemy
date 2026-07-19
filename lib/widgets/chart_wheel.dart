@@ -27,6 +27,14 @@ const _planetGlyphs = {
 const _lotOfFortuneKey = 'Lot of Fortune';
 const _lotOfSpiritKey = 'Lot of Spirit';
 
+// Confirmed against astronomicon.co's published character map: '?' is Part
+// of Fortune (Pars Fortunae) and '@' is Part of Spirit (Pars Spiritus, the
+// symbol Chris Brennan proposed).
+const _lotGlyphs = {
+  _lotOfFortuneKey: '?',
+  _lotOfSpiritKey: '@',
+};
+
 // In ZODIAC_SIGNS order (Aries..Pisces). Capricorn uses Astronomicon's
 // "Europe" variant (J) rather than its "USA" alternative (\).
 const _signGlyphs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
@@ -448,14 +456,12 @@ class _ChartWheelPainter extends CustomPainter {
     final fortune = placements[_lotOfFortuneKey];
     if (fortune != null) {
       _drawTick(canvas, center, ringInner, fortune);
-      _drawLotShape(canvas, fortune.point, isSpirit: false);
       _drawDegreeLabel(canvas, center, fortune, result.lotOfFortune.signLongitude, false);
     }
 
     final spirit = placements[_lotOfSpiritKey];
     if (spirit != null) {
       _drawTick(canvas, center, ringInner, spirit);
-      _drawLotShape(canvas, spirit.point, isSpirit: true);
       _drawDegreeLabel(canvas, center, spirit, result.lotOfSpirit.signLongitude, false);
     }
 
@@ -473,6 +479,8 @@ class _ChartWheelPainter extends CustomPainter {
       if (placement == null) continue;
       _drawPlanetGlyph(canvas, placement.point, name, AppColors.gold);
     }
+    if (fortune != null) _drawLotGlyph(canvas, fortune.point, _lotOfFortuneKey);
+    if (spirit != null) _drawLotGlyph(canvas, spirit.point, _lotOfSpiritKey);
   }
 
   void _drawPlanetGlyph(Canvas canvas, Offset center, String name, Color color) {
@@ -483,6 +491,19 @@ class _ChartWheelPainter extends CustomPainter {
       glyph,
       center,
       color: color,
+      fontSize: planetGlyphFontSize,
+      fontFamily: _astronomiconFontFamily,
+    );
+  }
+
+  void _drawLotGlyph(Canvas canvas, Offset center, String lotKey) {
+    final glyph = _lotGlyphs[lotKey];
+    if (glyph == null) return;
+    _drawText(
+      canvas,
+      glyph,
+      center,
+      color: AppColors.gold,
       fontSize: planetGlyphFontSize,
       fontFamily: _astronomiconFontFamily,
     );
@@ -513,23 +534,6 @@ class _ChartWheelPainter extends CustomPainter {
       color: AppColors.mutedText,
       fontSize: 10,
     );
-  }
-
-  void _drawLotShape(Canvas canvas, Offset point, {required bool isSpirit}) {
-    const r = 10.0;
-    final paint = Paint()
-      ..color = AppColors.gold
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawCircle(point, r, paint);
-    if (isSpirit) {
-      final d = r * 0.75;
-      canvas.drawLine(point + Offset(-d, -d), point + Offset(d, d), paint);
-      canvas.drawLine(point + Offset(-d, d), point + Offset(d, -d), paint);
-    } else {
-      canvas.drawLine(point + Offset(-r, 0), point + Offset(r, 0), paint);
-      canvas.drawLine(point + Offset(0, -r), point + Offset(0, r), paint);
-    }
   }
 
   Path _wedgePath(Offset center, double rInner, double rOuter, double relStart, double relSweep) {

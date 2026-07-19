@@ -300,6 +300,53 @@ def find_synastry_aspects(
     return aspects
 
 
+# Orb for a planet-to-angle synastry aspect (one native's planet against the
+# other's Ascendant or Midheaven) -- tighter still than planet-to-planet
+# synastry orbs, since an angle is a single sensitive point rather than a
+# body with its own averaged tolerance.
+SYNASTRY_ANGLE_ASPECT_ORBS = {
+    "Sun": 5,
+    "Moon": 5,
+    "Mercury": 3,
+    "Venus": 3,
+    "Mars": 3,
+    "Jupiter": 4,
+    "Saturn": 4,
+}
+
+
+def find_synastry_angle_aspects(
+    planet_longitudes: dict[str, float], angle_longitudes: dict[str, float]
+) -> list[dict]:
+    """Aspects between one native's planets and the *other* native's chart
+    angles. [angle_longitudes] is expected to hold just "ASC" and "MC" --
+    unlike find_planet_angle_aspects() (used for a single natal chart), DSC
+    and IC are deliberately omitted here since they're just the oppositions
+    of ASC/MC and would otherwise double-count the same relationship. Not
+    averaged with a per-pair orb like the planet-to-planet tables -- an
+    angle isn't a body with its own tolerance, so the planet's own orb
+    applies directly."""
+    aspects = []
+    for planet_name, planet_lon in planet_longitudes.items():
+        for angle_name, angle_lon in angle_longitudes.items():
+            separation = angular_separation(planet_lon, angle_lon)
+            allowed_orb = SYNASTRY_ANGLE_ASPECT_ORBS[planet_name]
+
+            match = best_aspect_match(separation, allowed_orb)
+            if match is not None:
+                aspect_name, orb = match
+                aspects.append(
+                    {
+                        "planet": planet_name,
+                        "angle_name": angle_name,
+                        "aspect": aspect_name,
+                        "angle": separation,
+                        "orb": orb,
+                    }
+                )
+    return aspects
+
+
 def is_diurnal(sun_house: int) -> bool:
     """Sect: Sun above the horizon (whole-sign houses 7-12) = diurnal chart."""
     return sun_house in range(7, 13)

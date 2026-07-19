@@ -127,7 +127,9 @@ class SynastryHouseOverlay(BaseModel):
 
 class SynastryAspect(BaseModel):
     planet_a: str
-    planet_b: str
+    from_chart: str = Field(..., description="'A' or 'B' -- which native planet_a belongs to")
+    planet_b: str = Field(..., description="Another planet's name, or 'ASC'/'MC' when is_angle is true")
+    is_angle: bool = Field(False, description="True if planet_b is a chart angle rather than a planet")
     aspect: str
     angle: float
     orb: float

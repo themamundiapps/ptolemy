@@ -77,6 +77,7 @@ def _compute_natal(date: str, time: str, latitude: float, longitude: float, tz_o
         "jd_ut": jd_ut,
         "asc_lon": asc_lon,
         "asc_sign": asc_sign,
+        "mc_lon": mc_lon,
         "mc_sign": mc_sign,
         "planets": planets,
         "diurnal": diurnal,
@@ -331,8 +332,29 @@ def get_synastry(request: SynastryRequest) -> SynastryResponse:
 
     longitudes_a = {name: pos.longitude for name, pos in native_a["planets"].items()}
     longitudes_b = {name: pos.longitude for name, pos in native_b["planets"].items()}
-    raw_aspects = sorted(ephemeris.find_synastry_aspects(longitudes_a, longitudes_b), key=lambda a: a["orb"])
-    inter_aspects = [SynastryAspect(**a) for a in raw_aspects]
+    raw_aspects = ephemeris.find_synastry_aspects(longitudes_a, longitudes_b)
+    planet_aspects = [SynastryAspect(**a, from_chart="A", is_angle=False) for a in raw_aspects]
+
+    # Angle inter-aspects: each native's planets against the *other* native's
+    # Ascendant and Midheaven -- traditionally among the most significant
+    # synastry indicators, so checked in both directions.
+    angles_a = {"ASC": native_a["asc_lon"], "MC": native_a["mc_lon"]}
+    angles_b = {"ASC": native_b["asc_lon"], "MC": native_b["mc_lon"]}
+    raw_angle_a_to_b = ephemeris.find_synastry_angle_aspects(longitudes_a, angles_b)
+    raw_angle_b_to_a = ephemeris.find_synastry_angle_aspects(longitudes_b, angles_a)
+    angle_aspects = [
+        SynastryAspect(
+            planet_a=d["planet"], from_chart="A", planet_b=d["angle_name"], is_angle=True, aspect=d["aspect"], angle=d["angle"], orb=d["orb"]
+        )
+        for d in raw_angle_a_to_b
+    ] + [
+        SynastryAspect(
+            planet_a=d["planet"], from_chart="B", planet_b=d["angle_name"], is_angle=True, aspect=d["aspect"], angle=d["angle"], orb=d["orb"]
+        )
+        for d in raw_angle_b_to_a
+    ]
+
+    inter_aspects = sorted(planet_aspects + angle_aspects, key=lambda a: a.orb)
 
     def _planet_prompt_entries(native: dict) -> list[dict]:
         return [{"name": n, "sign": p.sign, "house": p.house, "dignities": p.dignities} for n, p in native["planets"].items()]
@@ -347,7 +369,11 @@ def get_synastry(request: SynastryRequest) -> SynastryResponse:
         temperament_b=native_b["temperament_label"],
         planets_b=_planet_prompt_entries(native_b),
         house_overlays=[{"planet": o.planet, "from_chart": o.from_chart, "house": o.house} for o in house_overlays],
-        inter_aspects=[{"planet_a": a.planet_a, "planet_b": a.planet_b, "aspect": a.aspect, "orb": a.orb} for a in inter_aspects],
+        inter_aspects=[{"planet_a": a.planet_a, "planet_b": a.planet_b, "aspect": a.aspect, "orb": a.orb} for a in planet_aspects],
+        angle_aspects=[
+            {"planet": a.planet_a, "from_chart": a.from_chart, "angle_name": a.planet_b, "aspect": a.aspect, "orb": a.orb}
+            for a in angle_aspects
+        ],
     )
 
     try:

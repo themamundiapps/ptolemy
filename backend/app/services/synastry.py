@@ -68,12 +68,17 @@ def build_synastry_prompt(
     planets_b: list[dict],
     house_overlays: list[dict],
     inter_aspects: list[dict],
+    angle_aspects: list[dict],
 ) -> str:
     """house_overlays: [{"planet", "from_chart", "house"}, ...], where
     from_chart is "A" or "B" -- whose planet it is, falling into the *other*
     native's house.
-    inter_aspects: [{"planet_a", "planet_b", "aspect", "orb"}, ...], already
-    sorted by exactness, planet_a from native A and planet_b from native B.
+    inter_aspects: [{"planet_a", "planet_b", "aspect", "orb"}, ...], planet-to-
+    planet only, planet_a from native A and planet_b from native B.
+    angle_aspects: [{"planet", "from_chart", "angle_name", "aspect", "orb"}, ...],
+    a native's planet against the *other* native's ASC or MC -- from_chart is
+    "A" or "B", whichever native the planet (not the angle) belongs to.
+    Neither list needs to be pre-sorted; order here is display order only.
     """
     overlay_lines = [
         f"{o['planet']} (of {name_a if o['from_chart'] == 'A' else name_b}) falls in House {o['house']} "
@@ -87,6 +92,13 @@ def build_synastry_prompt(
         for a in inter_aspects
     ] or ["None within orb."]
 
+    angle_lines = [
+        f"{a['planet']} ({name_a if a['from_chart'] == 'A' else name_b}) "
+        f"{_ASPECT_SYMBOLS.get(a['aspect'], a['aspect'])} {a['angle_name']} of "
+        f"{name_b if a['from_chart'] == 'A' else name_a} — orb {a['orb']:.1f}°"
+        for a in angle_aspects
+    ] or ["None within orb."]
+
     return (
         "Cast a traditional synastry reading for the following two nativities.\n\n"
         + _native_block("First native", name_a, asc_sign_a, temperament_a, planets_a)
@@ -94,7 +106,11 @@ def build_synastry_prompt(
         + _native_block("Second native", name_b, asc_sign_b, temperament_b, planets_b)
         + "\n\n"
         "House overlays:\n" + "\n".join(overlay_lines) + "\n\n"
-        "Inter-aspects:\n" + "\n".join(aspect_lines) + "\n\n"
+        "Inter-aspects (planet to planet):\n" + "\n".join(aspect_lines) + "\n\n"
+        "Inter-aspects (planets to angles):\n" + "\n".join(angle_lines) + "\n\n"
+        "Pay particular attention to any aspects involving the Ascendant or Midheaven of either "
+        "native — these are traditionally among the most significant indicators of how the two "
+        "people experience each other.\n\n"
         "Write a 4-5 paragraph reading covering:\n"
         "1. The overall compatibility signature — what kind of connection is this?\n"
         "2. The strongest points of harmony\n"

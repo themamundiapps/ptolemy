@@ -66,6 +66,50 @@ def test_find_synastry_aspects_respects_the_tighter_mercury_orb():
 
 
 # ---------------------------------------------------------------------------
+# find_synastry_angle_aspects (pure function, no network)
+# ---------------------------------------------------------------------------
+
+
+def test_synastry_angle_orbs_cover_all_seven_classical_planets():
+    assert set(ephemeris.SYNASTRY_ANGLE_ASPECT_ORBS.keys()) == set(ephemeris.CLASSICAL_PLANETS.keys())
+
+
+def test_find_synastry_angle_aspects_checks_all_14_combinations():
+    # 7 planets at 0 deg, ASC and MC both at 50 deg -- a flat 50 deg
+    # separation for all 14 pairs, more than 5 deg (the widest possible
+    # angle orb) from the nearest major aspect angle (0 or 60), proving
+    # every planet x angle pair was actually evaluated.
+    planet_longitudes = {name: 0.0 for name in ephemeris.CLASSICAL_PLANETS}
+    angle_longitudes = {"ASC": 50.0, "MC": 50.0}
+    assert ephemeris.find_synastry_angle_aspects(planet_longitudes, angle_longitudes) == []
+
+
+def test_find_synastry_angle_aspects_finds_a_conjunction_within_orb():
+    planet_longitudes = {"Venus": 100.0}
+    angle_longitudes = {"ASC": 101.5}
+    hits = ephemeris.find_synastry_angle_aspects(planet_longitudes, angle_longitudes)
+    assert hits == [{"planet": "Venus", "angle_name": "ASC", "aspect": "conjunction", "angle": 1.5, "orb": 1.5}]
+
+
+def test_find_synastry_angle_aspects_respects_the_tighter_mercury_orb():
+    # Mercury's angle orb is 3 deg (not averaged, unlike planet-to-planet) --
+    # 4 deg apart falls outside it.
+    planet_longitudes = {"Mercury": 10.0}
+    angle_longitudes = {"ASC": 14.0}
+    assert ephemeris.find_synastry_angle_aspects(planet_longitudes, angle_longitudes) == []
+
+
+def test_find_synastry_angle_aspects_allows_the_wider_sun_moon_orb():
+    # Sun/Moon angle orb is 5 deg -- 4.5 deg apart is within it even though
+    # it would fail Mercury's tighter 3 deg orb.
+    planet_longitudes = {"Sun": 200.0}
+    angle_longitudes = {"MC": 204.5}
+    hits = ephemeris.find_synastry_angle_aspects(planet_longitudes, angle_longitudes)
+    assert len(hits) == 1
+    assert hits[0]["angle_name"] == "MC"
+
+
+# ---------------------------------------------------------------------------
 # build_synastry_prompt (pure function, no network)
 # ---------------------------------------------------------------------------
 
@@ -86,6 +130,7 @@ def _base_kwargs(**overrides):
         planets_b=[_planet(name="Mars", sign="Aries", house=1)],
         house_overlays=[{"planet": "Venus", "from_chart": "A", "house": 8}],
         inter_aspects=[{"planet_a": "Sun", "planet_b": "Moon", "aspect": "trine", "orb": 2.3}],
+        angle_aspects=[],
     )
     kwargs.update(overrides)
     return kwargs
@@ -126,6 +171,47 @@ def test_prompt_asks_for_the_five_traditional_sections():
         assert phrase in prompt
 
 
+def test_prompt_labels_the_two_inter_aspect_sections_separately():
+    prompt = synastry.build_synastry_prompt(**_base_kwargs())
+    assert "Inter-aspects (planet to planet):" in prompt
+    assert "Inter-aspects (planets to angles):" in prompt
+
+
+def test_prompt_formats_an_angle_aspect_line_with_from_chart_a():
+    prompt = synastry.build_synastry_prompt(
+        **_base_kwargs(
+            angle_aspects=[{"planet": "Sun", "from_chart": "A", "angle_name": "ASC", "aspect": "conjunction", "orb": 1.2}]
+        )
+    )
+    assert "Sun (Alex) ☌ ASC of Sam — orb 1.2°" in prompt
+
+
+def test_prompt_formats_an_angle_aspect_line_with_from_chart_b():
+    # from_chart "B" means the planet is the *second* native's -- the angle
+    # named belongs to the first native instead, and the line must credit
+    # each side to the correct person.
+    prompt = synastry.build_synastry_prompt(
+        **_base_kwargs(
+            angle_aspects=[{"planet": "Mars", "from_chart": "B", "angle_name": "MC", "aspect": "square", "orb": 0.5}]
+        )
+    )
+    assert "Mars (Sam) □ MC of Alex — orb 0.5°" in prompt
+
+
+def test_prompt_falls_back_to_none_within_orb_when_no_angle_aspects():
+    prompt = synastry.build_synastry_prompt(**_base_kwargs(angle_aspects=[]))
+    assert prompt.count("None within orb.") == 1  # the planet-to-planet section has a real hit
+    assert "Inter-aspects (planets to angles):\nNone within orb." in prompt
+
+
+def test_prompt_instructs_extra_attention_to_angle_aspects():
+    prompt = synastry.build_synastry_prompt(**_base_kwargs())
+    assert (
+        "Pay particular attention to any aspects involving the Ascendant or Midheaven of either "
+        "native" in prompt
+    )
+
+
 # ---------------------------------------------------------------------------
 # /chart/synastry endpoint (AI call monkeypatched)
 # ---------------------------------------------------------------------------
@@ -162,6 +248,41 @@ def test_synastry_endpoint_sorts_aspects_by_exactness(monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
     orbs = [a["orb"] for a in response.json()["aspects"]]
+    assert orbs == sorted(orbs)
+
+
+def test_synastry_endpoint_planet_aspects_are_not_flagged_as_angle(monkeypatch):
+    monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
+    monkeypatch.setattr(ephemeris, "find_synastry_angle_aspects", lambda *a, **k: [])
+    response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
+    body = response.json()
+    assert all(a["is_angle"] is False and a["from_chart"] == "A" for a in body["aspects"])
+
+
+def test_synastry_endpoint_merges_angle_aspects_from_both_directions(monkeypatch):
+    # find_synastry_angle_aspects is called twice by the endpoint -- once for
+    # A's planets against B's angles, once for B's planets against A's. A
+    # call counter distinguishes them without depending on real ephemeris
+    # data lining up with an aspect by chance.
+    monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
+    calls = {"n": 0}
+
+    def fake_angle_aspects(planet_longitudes, angle_longitudes):
+        calls["n"] += 1
+        planet = "Sun" if calls["n"] == 1 else "Moon"
+        return [{"planet": planet, "angle_name": "ASC", "aspect": "conjunction", "angle": 1.0, "orb": 1.0}]
+
+    monkeypatch.setattr(ephemeris, "find_synastry_angle_aspects", fake_angle_aspects)
+    response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
+    body = response.json()
+
+    angle_hits = [a for a in body["aspects"] if a["is_angle"]]
+    assert len(angle_hits) == 2
+    assert {(a["planet_a"], a["from_chart"]) for a in angle_hits} == {("Sun", "A"), ("Moon", "B")}
+    assert all(a["planet_b"] == "ASC" for a in angle_hits)
+
+    # And the merged list as a whole stays sorted by orb, angle hits included.
+    orbs = [a["orb"] for a in body["aspects"]]
     assert orbs == sorted(orbs)
 
 

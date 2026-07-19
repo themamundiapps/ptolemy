@@ -299,14 +299,18 @@ class SynastryHouseOverlay {
 
 class SynastryAspect {
   final String planetA;
+  final String fromChart;
   final String planetB;
+  final bool isAngle;
   final String aspect;
   final double angle;
   final double orb;
 
   SynastryAspect({
     required this.planetA,
+    required this.fromChart,
     required this.planetB,
+    required this.isAngle,
     required this.aspect,
     required this.angle,
     required this.orb,
@@ -315,7 +319,14 @@ class SynastryAspect {
   factory SynastryAspect.fromJson(Map<String, dynamic> json) {
     return SynastryAspect(
       planetA: json['planet_a'] as String,
+      // Both fields are new -- default so a comparison cached by a previous
+      // app version (before angle aspects existed) still loads instead of
+      // throwing. Every aspect that predates this field was planet-to-planet
+      // from native A, so these defaults are also the historically correct
+      // values, not just crash-avoidance.
+      fromChart: json['from_chart'] as String? ?? 'A',
       planetB: json['planet_b'] as String,
+      isAngle: json['is_angle'] as bool? ?? false,
       aspect: json['aspect'] as String,
       angle: (json['angle'] as num).toDouble(),
       orb: (json['orb'] as num).toDouble(),
@@ -324,7 +335,9 @@ class SynastryAspect {
 
   Map<String, dynamic> toJson() => {
     'planet_a': planetA,
+    'from_chart': fromChart,
     'planet_b': planetB,
+    'is_angle': isAngle,
     'aspect': aspect,
     'angle': angle,
     'orb': orb,
