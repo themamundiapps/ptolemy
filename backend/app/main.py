@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chart, electional, geocode, interpretations, temperament, user
+from app.routers import chart, chat, electional, geocode, interpretations, temperament, user
 
 app = FastAPI(title="Ptolemy API", version="0.1.0")
 
@@ -40,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(chart.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
 app.include_router(geocode.router, prefix="/api/v1")
 app.include_router(interpretations.router, prefix="/api/v1")
 app.include_router(temperament.router, prefix="/api/v1")

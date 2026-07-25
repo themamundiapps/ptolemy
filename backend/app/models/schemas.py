@@ -261,3 +261,23 @@ class UserChartResponse(BaseModel):
     date: str
     time: str
     tz_offset: float | None = None
+
+
+class AiQuotaResponse(BaseModel):
+    remaining: int
+    limit: int
+    resets_at: str
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str
+
+
+class ChatAstrologerRequest(ChartRequest):
+    messages: list[ChatMessage] = Field(..., min_length=1, description="Full conversation so far, ending in the new user message")
+    user_id: str | None = Field(None, description="See ChartAnalysisRequest.user_id")
+
+
+class ChatAstrologerResponse(BaseModel):
+    reply: str

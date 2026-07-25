@@ -18,7 +18,7 @@ from app.models.schemas import (
     TransitsResponse,
     ZodiacPosition,
 )
-from app.services import analysis, ephemeris, rate_limit, synastry as synastry_service, temperament
+from app.services import analysis, ephemeris, natal, rate_limit, synastry as synastry_service, temperament
 from app.services import transits as transits_service
 from app.services import timezone as tz_resolver
 
@@ -26,65 +26,10 @@ router = APIRouter(prefix="/chart", tags=["chart"])
 
 
 def _resolve_tz_offset(birth) -> float:
-    """birth: any object with .tz_offset/.latitude/.longitude/.date/.time
-    attributes -- ChartRequest and SynastryPersonRequest both satisfy this
-    structurally, so this works for either without a shared base class."""
-    if birth.tz_offset is not None:
-        return birth.tz_offset
     try:
-        _timezone_id, tz_offset = tz_resolver.resolve_utc_offset(birth.latitude, birth.longitude, birth.date, birth.time)
-    except tz_resolver.TimezoneLookupError as e:
+        return natal.resolve_tz_offset(birth)
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return tz_offset
-
-
-def _compute_natal(date: str, time: str, latitude: float, longitude: float, tz_offset: float) -> dict:
-    """Shared natal-chart computation (positions, dignities, temperament)
-    used by both /chart/analysis (one nativity) and /chart/synastry (two)."""
-    jd_ut = ephemeris.julian_day_ut(date, time, tz_offset)
-    asc_lon, mc_lon = ephemeris.calc_angles(jd_ut, latitude, longitude)
-    asc_sign, _asc_deg = ephemeris.sign_and_degree(asc_lon)
-    mc_sign, _mc_deg = ephemeris.sign_and_degree(mc_lon)
-
-    planets: dict[str, ZodiacPosition] = {}
-    planet_dicts: dict[str, dict] = {}
-    for name, body_id in ephemeris.CLASSICAL_PLANETS.items():
-        lon, retrograde = ephemeris.calc_planet(jd_ut, body_id)
-        sign, deg = ephemeris.sign_and_degree(lon)
-        house = ephemeris.whole_sign_house(lon, asc_lon)
-        planets[name] = ZodiacPosition(
-            longitude=lon,
-            sign=sign,
-            sign_longitude=deg,
-            house=house,
-            retrograde=retrograde,
-            dignities=ephemeris.essential_dignities(name, sign),
-        )
-        planet_dicts[name] = {"longitude": lon, "sign": sign, "house": house}
-
-    diurnal = ephemeris.is_diurnal(planets["Sun"].house)
-    sun_lon = planets["Sun"].longitude
-    moon_lon = planets["Moon"].longitude
-
-    temperament_result = temperament.calculate(
-        asc_sign=asc_sign,
-        planets=planet_dicts,
-        sun_longitude=sun_lon,
-        moon_longitude=moon_lon,
-    )
-
-    return {
-        "jd_ut": jd_ut,
-        "asc_lon": asc_lon,
-        "asc_sign": asc_sign,
-        "mc_lon": mc_lon,
-        "mc_sign": mc_sign,
-        "planets": planets,
-        "diurnal": diurnal,
-        "sun_lon": sun_lon,
-        "moon_lon": moon_lon,
-        "temperament_label": temperament_result["temperament"],
-    }
 
 
 @router.post("/positions", response_model=ChartResponse)
@@ -234,7 +179,7 @@ def get_chart_analysis(request: ChartAnalysisRequest) -> ChartAnalysisResponse:
         raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
 
     tz_offset = _resolve_tz_offset(request)
-    native = _compute_natal(request.date, request.time, request.latitude, request.longitude, tz_offset)
+    native = natal.compute_natal(request.date, request.time, request.latitude, request.longitude, tz_offset)
 
     asc_lon = native["asc_lon"]
     asc_sign = native["asc_sign"]
@@ -304,10 +249,10 @@ def get_synastry(request: SynastryRequest) -> SynastryResponse:
     tz_offset_a = _resolve_tz_offset(request.person_a)
     tz_offset_b = _resolve_tz_offset(request.person_b)
 
-    native_a = _compute_natal(
+    native_a = natal.compute_natal(
         request.person_a.date, request.person_a.time, request.person_a.latitude, request.person_a.longitude, tz_offset_a
     )
-    native_b = _compute_natal(
+    native_b = natal.compute_natal(
         request.person_b.date, request.person_b.time, request.person_b.latitude, request.person_b.longitude, tz_offset_b
     )
 
