@@ -665,10 +665,22 @@ def _auspicious_reasons(
     aspect to one of the theme's core houses must be applying. Passing
     "desirable" alone (Moon waxing, a favorable weekday, Moon applying to a
     benefic, or essential dignity) is not enough on its own — without this,
-    a day tops out at "Favorable", never "Auspicious"."""
+    a day tops out at "Favorable", never "Auspicious".
+
+    Deliberately checks only the theme's fixed NATURAL significators (e.g.
+    Venus/Jupiter for Love & Relationships) — unlike _important_reasons,
+    this does NOT fall through to _significators_for's dynamic set (the
+    native's accidental Ascendant/primary-house ruler). An accidental ruler
+    is a legitimate "important" signal, but letting it satisfy this gate on
+    its own meant a day with Mars aspects alone (no benefic contribution at
+    all) could still be labeled Auspicious whenever Mars happened to rule
+    this native's Ascendant or the theme's primary house — misrepresenting
+    what "Auspicious" traditionally promises for a benefic-ruled theme."""
     lon = state["lon"]
     reasons: list[str] = []
-    for planet, houses in _significators_for(theme, cusps, extra_houses=theme.get("auspicious_extra_houses")):
+    natural_planets = [p for p, _houses in theme["important_aspects"]]
+    houses = _theme_houses(theme, theme.get("auspicious_extra_houses"))
+    for planet in natural_planets:
         for house in houses:
             separation = ephemeris.angular_separation(lon[planet], cusps[house])
             match = ephemeris.best_aspect_match(separation, IMPORTANT_ORBS[planet])
