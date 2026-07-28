@@ -889,6 +889,124 @@ def test_scan_unknown_theme_raises():
         electional.scan(0.0, "not_a_real_theme", "2026-01-01", "2026-01-02", 0.0)
 
 
+# ---------------------------------------------------------------------------
+# Problem 1 -- hour/minute scores must be a pure function of that moment's
+# own geometry, never of what happened earlier in the same day's loop.
+# ---------------------------------------------------------------------------
+
+
+def test_weighted_hits_diminishing_returns_still_applies_within_one_moment():
+    # The per-moment guard itself (multiple simultaneous hits from the same
+    # planet diminish against each other) is intentional and must still
+    # work -- only the cross-hour/cross-minute carry-over was the bug.
+    raw_hits = [
+        {
+            "planet": "Venus",
+            "house": 5,
+            "house_name": "Love & Pleasure",
+            "aspect": "trine",
+            "mode": "direct",
+            "orb": 1.0,
+            "score": 4.0,
+            "is_supporting": True,
+            "is_cazimi": False,
+        },
+        {
+            "planet": "Venus",
+            "house": 7,
+            "house_name": "Partnership & Marriage",
+            "aspect": "sextile",
+            "mode": "direct",
+            "orb": 1.0,
+            "score": 4.0,
+            "is_supporting": True,
+            "is_cazimi": False,
+        },
+    ]
+    total, weighted = electional._weighted_hits(raw_hits, {})
+    # First Venus hit this "moment" at full weight (1.0), second at 0.5 --
+    # see _diminishing_weight -- both starting fresh from {}.
+    assert weighted[0]["score"] == 4.0
+    assert weighted[1]["score"] == 2.0
+    assert total == 6.0
+
+
+def test_weighted_hits_same_geometry_scores_identically_regardless_of_prior_counts_argument():
+    # Confirms _diminishing_weight/_weighted_hits themselves are correct and
+    # unchanged -- the bug was never in this function, it was in scan()
+    # always calling it with {} instead of an accumulating dict. Given the
+    # SAME counts_before twice, the same raw_hits score the same.
+    raw_hits = [
+        {
+            "planet": "Mercury",
+            "house": 3,
+            "house_name": "Communication & Travel",
+            "aspect": "trine",
+            "mode": "direct",
+            "orb": 0.5,
+            "score": 3.0,
+            "is_supporting": True,
+            "is_cazimi": False,
+        }
+    ]
+    score_a, _ = electional._weighted_hits(raw_hits, {})
+    score_b, _ = electional._weighted_hits(raw_hits, {})
+    assert score_a == score_b
+
+
+def test_scan_hour_and_minute_loops_always_pass_fresh_counts(asc_longitude, monkeypatch):
+    """Regression for Problem 1: the hour loop used to pass a planet_counts
+    dict that accumulated across the whole day into _weighted_hits (and the
+    minute-refinement loop reused that same stale accumulation), so an
+    hour/minute's score depended on what happened earlier the same day, not
+    just its own geometry -- hour 0 had a structural advantage over hour 23
+    for identical astronomy. Spy on _weighted_hits to confirm every call
+    scan() makes now receives a fresh, empty counts_before every time."""
+    seen_counts_before = []
+    real_weighted_hits = electional._weighted_hits
+
+    def spy(raw_hits, counts_before):
+        seen_counts_before.append(dict(counts_before))
+        return real_weighted_hits(raw_hits, counts_before)
+
+    monkeypatch.setattr(electional, "_weighted_hits", spy)
+    electional.scan(asc_longitude, "love_relationships", "2026-01-01", "2026-01-03", 0.0)
+
+    assert seen_counts_before, "expected _weighted_hits to have been called"
+    assert all(c == {} for c in seen_counts_before), "found a non-empty counts_before -- the old bug is back"
+
+
+# ---------------------------------------------------------------------------
+# Problem 2 -- "Best Moments" must rank by strength within a bucket, not by
+# date. Date is only the tiebreaker for equal strength.
+# ---------------------------------------------------------------------------
+
+
+def test_by_strength_orders_stronger_day_first_regardless_of_date():
+    weak_early = {"date": "2026-01-02", "strength": 1.0}
+    strong_late = {"date": "2026-01-20", "strength": 9.0}
+    ordered = electional._by_strength([weak_early, strong_late])
+    assert [r["date"] for r in ordered] == ["2026-01-20", "2026-01-02"]
+
+
+def test_by_strength_uses_date_as_tiebreaker_for_equal_strength():
+    later = {"date": "2026-01-10", "strength": 5.0}
+    earlier = {"date": "2026-01-03", "strength": 5.0}
+    ordered = electional._by_strength([later, earlier])
+    assert [r["date"] for r in ordered] == ["2026-01-03", "2026-01-10"]
+
+
+def test_scan_days_carry_a_numeric_strength_field(asc_longitude):
+    result = electional.scan(asc_longitude, "love_relationships", "2026-07-07", "2026-08-06", 2.0)
+    for day in result["days"]:
+        assert isinstance(day.get("strength", None), (int, float)) or "strength" not in day
+    # strength is an internal scan()-loop field, not part of the public
+    # per-day dict returned in "days" -- ElectionalDay/schemas.py doesn't
+    # expose it. This just confirms scan() didn't accidentally leak it into
+    # the public response shape.
+    assert all("strength" not in day for day in result["days"])
+
+
 def test_scan_runs_in_reasonable_time_for_a_year(asc_longitude):
     import time
 

@@ -755,6 +755,19 @@ def _moon_caution_note(theme_label: str) -> str:
     )
 
 
+def _by_strength(records: list[dict]) -> list[dict]:
+    """Strongest day first within a bucket, by the weighted score of that
+    day's own best hour (see day_record["strength"] in scan()) — date is
+    only the tiebreaker for equal strength, not the primary sort key.
+
+    "Best Moments for X" used to mean "earliest days that qualified", not
+    strongest — a day with much stronger support late in the search window
+    could never surface if 5 weaker days earlier in the window already
+    filled the bucket. Bucket priority (Auspicious before Favorable before
+    Best Available) is unchanged; this only reorders WITHIN a bucket."""
+    return sorted(records, key=lambda r: (-r["strength"], r["date"]))
+
+
 def scan(
     asc_longitude: float,
     theme_key: str,
@@ -807,18 +820,24 @@ def scan(
         # Hourly scan first, to find the day's best-scoring hour — the
         # checklist below is then evaluated AT that hour (see module
         # docstring) instead of an arbitrary fixed reference time.
-        planet_counts: dict[str, int] = {}
+        #
+        # _weighted_hits's diminishing-returns weight is a per-MOMENT guard
+        # against a single planet dominating by aspecting several house
+        # cusps simultaneously (see _diminishing_weight) -- it must start
+        # from an empty count at the top of every hour. Passing an empty
+        # dict here (rather than accumulating a running planet_counts
+        # across the whole day, as this used to do) is what makes an
+        # hour's score a pure function of that hour's own geometry: two
+        # hours with identical planetary aspects now score identically
+        # regardless of which one comes first in the 0..23 loop.
         hour_entries = []
         for hour in range(24):
             jd = day_start_jd + hour * _HOUR
             raw_hits = _raw_hits_at_moment(jd, cusps, relevant_houses, theme_key)
-            counts_before_hour = dict(planet_counts)
-            hour_score, _weighted = _weighted_hits(raw_hits, planet_counts)
-            for hit in raw_hits:
-                planet_counts[hit["planet"]] = planet_counts.get(hit["planet"], 0) + 1
-            hour_entries.append((hour, hour_score, counts_before_hour))
+            hour_score, _weighted = _weighted_hits(raw_hits, {})
+            hour_entries.append((hour, hour_score))
 
-        best_hour, _best_hour_score, baseline_counts = max(hour_entries, key=lambda e: e[1])
+        best_hour, best_hour_score = max(hour_entries, key=lambda e: e[1])
         hour_start_jd = day_start_jd + best_hour * _HOUR
 
         state = _gather_state(hour_start_jd)
@@ -850,7 +869,11 @@ def scan(
         day_record = {
             "date": date_str,
             "hour_start_jd": hour_start_jd,
-            "baseline_counts": baseline_counts,
+            # The weighted score of this day's own best hour -- the same
+            # quantity that already decides which hour wins within a day
+            # (see the hour loop above), reused to rank BETWEEN days too.
+            # See _by_strength below.
+            "strength": best_hour_score,
             "moon_voc": raw_moon_voc,
             "via_combusta": raw_via_combusta,
             "caution": caution_text,
@@ -877,16 +900,16 @@ def scan(
         # they're informative enough to show even when better days exist,
         # per PTOLEMY_ELECTIONAL_REDESIGN.md Section 2 Task 2.
         selected = (
-            [(d, "Auspicious") for d in sorted(auspicious, key=lambda r: r["date"])]
-            + [(d, "Favorable") for d in sorted(favorable, key=lambda r: r["date"])]
-            + [(d, "Best Available") for d in sorted(moon_caution, key=lambda r: r["date"])]
+            [(d, "Auspicious") for d in _by_strength(auspicious)]
+            + [(d, "Favorable") for d in _by_strength(favorable)]
+            + [(d, "Best Available") for d in _by_strength(moon_caution)]
         )
         tier_used = "mixed"
     elif moon_caution:
-        selected = [(d, "Best Available") for d in sorted(moon_caution, key=lambda r: r["date"])]
+        selected = [(d, "Best Available") for d in _by_strength(moon_caution)]
         tier_used = "moon_caution"
     elif best_available:
-        selected = [(d, "Best Available") for d in sorted(best_available, key=lambda r: r["date"])]
+        selected = [(d, "Best Available") for d in _by_strength(best_available)]
         tier_used = "best_available"
     else:
         selected = []
@@ -896,15 +919,17 @@ def scan(
     final = []
     for day_record, quality_label in selected:
         hour_start_jd = day_record["hour_start_jd"]
-        baseline_counts = day_record["baseline_counts"]
 
+        # Same per-moment principle as the hourly scan above: each minute's
+        # score depends only on that minute's own geometry, not on the
+        # minutes before it within the hour.
         best_score = float("-inf")
         best_hits: list[dict] = []
         best_jd = hour_start_jd
         for minute in range(60):
             jd = hour_start_jd + minute * _MINUTE
             raw_hits = _raw_hits_at_moment(jd, cusps, relevant_houses, theme_key)
-            minute_score, weighted = _weighted_hits(raw_hits, baseline_counts)
+            minute_score, weighted = _weighted_hits(raw_hits, {})
             if minute_score > best_score:
                 best_score = minute_score
                 best_hits = weighted
