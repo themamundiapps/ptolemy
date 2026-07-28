@@ -204,6 +204,107 @@ def best_aspect_match(separation: float, allowed_orb: float) -> tuple[str, float
     return best
 
 
+# Void-of-course Moon and via combusta -- lives here (not in electional.py,
+# the only caller until now) because it's a general lunar-state fact, not
+# electional-specific logic: the Transits feature needs the exact same
+# calculation to show the Moon's current condition.
+#
+# STRICT/CLASSICAL definition of void-of-course, deliberately: the Moon
+# perfects no further Ptolemaic aspect with any of the other six classical
+# planets before leaving its current sign. This is the traditional
+# definition (e.g. Lilly) as opposed to the more permissive modern
+# convention some software uses, which also counts an aspect that
+# perfects after a sign change. Given this product's positioning (technical
+# traditional astrology, not pop astrology), the strict definition is the
+# correct default -- see PTOLEMY_ELECTIONAL_REDESIGN.md Section 2.
+
+# Forward-stepping resolution used to determine whether the Moon is void of
+# course: does it perfect a major aspect with any classical planet before it
+# changes sign, checked in 30-minute increments up to 3 days ahead.
+_VOC_STEP = 0.5 / 24
+_VOC_MAX_STEPS = 144
+
+# Sextile/square/trine are detected by a genuine sign-crossing of
+# (separation - aspect_angle) — the aspect actually became exact somewhere
+# in the interval, not merely "close" at one sampled instant. Conjunction
+# (0°) and opposition (180°) sit at the boundary of the folded [0, 180]
+# separation range, so they can never numerically "cross" the way an
+# interior aspect can; they're detected instead as a local closest-approach
+# (a trend reversal) landing within this tight orb.
+_VOC_BOUNDARY_ORB = 1.0
+
+
+def moon_next_aspect(jd_ut: float) -> tuple[str, str] | None:
+    """The (planet, aspect_name) the Moon next perfects before changing sign,
+    found by forward-stepping in 30-minute increments (see _VOC_BOUNDARY_ORB
+    above for why conjunction/opposition need a different test than the
+    other three aspects). Returns None if the Moon is void of course (no
+    aspect completes before it leaves its current sign, within a 3-day
+    safety cap)."""
+    moon_id = CLASSICAL_PLANETS["Moon"]
+    other_planets = [(p, b) for p, b in CLASSICAL_PLANETS.items() if p != "Moon"]
+
+    moon_lon, _ = calc_planet(jd_ut, moon_id)
+    sign_index = int(moon_lon // 30)
+
+    prev_sep: dict[str, float] = {}
+    prev_delta: dict[tuple[str, str], float] = {}
+    prev_trend: dict[str, float] = {}
+    for planet, body_id in other_planets:
+        p_lon, _ = calc_planet(jd_ut, body_id)
+        sep = angular_separation(moon_lon, p_lon)
+        prev_sep[planet] = sep
+        for aspect_name, aspect_angle in MAJOR_ASPECTS.items():
+            prev_delta[(planet, aspect_name)] = sep - aspect_angle
+
+    jd = jd_ut
+    for _ in range(_VOC_MAX_STEPS):
+        jd += _VOC_STEP
+        m_lon, _ = calc_planet(jd, moon_id)
+        if int(m_lon // 30) != sign_index:
+            return None
+
+        for planet, body_id in other_planets:
+            p_lon, _ = calc_planet(jd, body_id)
+            sep = angular_separation(m_lon, p_lon)
+            trend = sep - prev_sep[planet]
+            prior_trend = prev_trend.get(planet)
+
+            for aspect_name, aspect_angle in MAJOR_ASPECTS.items():
+                delta = sep - aspect_angle
+                prev = prev_delta[(planet, aspect_name)]
+                if aspect_angle in (0, 180):
+                    if prior_trend is not None and prior_trend * trend < 0 and abs(prev) <= _VOC_BOUNDARY_ORB:
+                        return planet, aspect_name
+                else:
+                    if prev == 0.0 or (prev > 0) != (delta > 0):
+                        return planet, aspect_name
+                prev_delta[(planet, aspect_name)] = delta
+
+            prev_trend[planet] = trend
+            prev_sep[planet] = sep
+    return None
+
+
+def moon_void_of_course(jd_ut: float) -> bool:
+    """True if the Moon perfects no further aspect before leaving its sign
+    (see moon_next_aspect) -- the strict/classical void-of-course test."""
+    return moon_next_aspect(jd_ut) is None
+
+
+# Via combusta ("the burnt path"): the Moon between 15 Libra and 15 Scorpio,
+# a classical caution zone traditionally considered to weaken or corrupt her
+# significations.
+VIA_COMBUSTA_START = 195.0
+VIA_COMBUSTA_END = 225.0
+
+
+def moon_via_combusta(moon_lon: float) -> bool:
+    """True if the Moon is between 15 Libra and 15 Scorpio (195-225 degrees
+    absolute longitude) — the classical "via combusta" caution zone."""
+    return VIA_COMBUSTA_START <= moon_lon < VIA_COMBUSTA_END
+
+
 def find_aspects(planet_longitudes: dict[str, float]) -> list[dict]:
     """All major aspects between every pair of planets, within averaged orb."""
     names = list(planet_longitudes.keys())

@@ -316,36 +316,74 @@ def test_essential_passes_when_venus_clear_of_sun():
     assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Aries", "2026-01-01", set(), 0.0) is True
 
 
-def test_essential_fails_on_void_of_course_moon():
+def test_essential_no_longer_excludes_void_of_course_moon():
+    # Void-of-course used to be a hard essential exclude (this test used to
+    # assert False here). It's now a per-day downgrade-with-reason instead
+    # -- see _moon_caution_text and the moon_caution tests below --
+    # _essential_ok itself no longer looks at the Moon's void status at all.
     theme = electional.THEMES["love_relationships"]
     state = make_state({"Venus": 100.0, "Sun": 250.0}, moon_next_aspect=None)
-    assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Aries", "2026-01-01", set(), 0.0) is False
+    assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Aries", "2026-01-01", set(), 0.0) is True
 
 
-def test_moon_via_combusta_boundaries():
-    assert electional._moon_via_combusta(195.0) is True
-    assert electional._moon_via_combusta(210.0) is True
-    assert electional._moon_via_combusta(224.999) is True
-    assert electional._moon_via_combusta(225.0) is False
-    assert electional._moon_via_combusta(194.999) is False
-    assert electional._moon_via_combusta(0.0) is False
-
-
-def test_essential_fails_on_via_combusta_moon():
+def test_essential_no_longer_excludes_via_combusta_moon():
+    # Same relocation as void-of-course above, for via combusta.
     theme = electional.THEMES["love_relationships"]
     # Moon at 210 degrees -- 15 Libra to 15 Scorpio is 195-225, so this sits
     # squarely inside the via combusta zone.
     state = make_state({"Venus": 100.0, "Sun": 250.0, "Moon": 210.0}, moon_next_aspect=("Jupiter", "trine"))
-    assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Aries", "2026-01-01", set(), 0.0) is False
+    assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Aries", "2026-01-01", set(), 0.0) is True
 
 
-def test_essential_via_combusta_applies_even_when_theme_ignores_voc():
-    # Unlike void-of-course, via combusta is not gated per-theme -- it must
-    # still exclude the day for health_body, whose essential_moon_not_voc
-    # is False.
-    theme = electional.THEMES["health_body"]
-    state = make_state({"Moon": 210.0, "Mercury": 200.0, "Venus": 210.0}, moon_next_aspect=("Jupiter", "trine"))
-    assert electional._essential_ok(theme, state, STANDARD_CUSPS, "Libra", "2026-01-01", set(), 0.0) is False
+# ---------------------------------------------------------------------------
+# Moon caution: _gated_voc, _moon_caution_text, _moon_caution_note
+# (replaces the old hard-exclude behavior above with downgrade + reason --
+# see PTOLEMY_ELECTIONAL_REDESIGN.md Section 2)
+# ---------------------------------------------------------------------------
+
+
+def test_gated_voc_respects_theme_flag():
+    # Every theme except health_body has essential_moon_not_voc=True.
+    assert electional._gated_voc(electional.THEMES["travel"], True) is True
+    assert electional._gated_voc(electional.THEMES["love_relationships"], True) is True
+    # health_body is the one exception -- see Section 2 Task 5: undocumented
+    # provenance, preserved as-is, not altered by this redesign.
+    assert electional._gated_voc(electional.THEMES["health_body"], True) is False
+
+
+def test_gated_voc_false_when_moon_not_actually_void():
+    assert electional._gated_voc(electional.THEMES["travel"], False) is False
+
+
+def test_moon_caution_text_none_when_neither_condition_applies():
+    assert electional._moon_caution_text(False, False) is None
+
+
+def test_moon_caution_text_void_of_course_only():
+    text = electional._moon_caution_text(True, False)
+    assert text is not None
+    assert "void of course" in text
+    assert "via combusta" not in text
+
+
+def test_moon_caution_text_via_combusta_only():
+    text = electional._moon_caution_text(False, True)
+    assert text is not None
+    assert "via combusta" in text
+    assert "void of course" not in text
+
+
+def test_moon_caution_text_both_conditions():
+    text = electional._moon_caution_text(True, True)
+    assert text is not None
+    assert "void of course" in text
+    assert "via combusta" in text
+
+
+def test_moon_caution_note_mentions_theme_label():
+    note = electional._moon_caution_note("Travel")
+    assert "travel" in note.lower()
+    assert "void" in note.lower() or "combust" in note.lower()
 
 
 def test_essential_passes_just_outside_via_combusta_zone():
@@ -680,36 +718,6 @@ def test_raw_hits_flags_cazimi_on_direct_hit_not_antiscion():
 
 
 # ---------------------------------------------------------------------------
-# _moon_next_aspect (VoC) -- crossing-detection correctness
-# ---------------------------------------------------------------------------
-
-
-def test_moon_next_aspect_returns_none_or_valid_pair():
-    for day_offset in range(0, 30, 5):
-        jd = ephemeris.julian_day_ut("2026-01-01", "12:00", 0.0) + day_offset
-        result = electional._moon_next_aspect(jd)
-        if result is not None:
-            planet, aspect_name = result
-            assert planet in ephemeris.CLASSICAL_PLANETS
-            assert planet != "Moon"
-            assert aspect_name in ephemeris.MAJOR_ASPECTS
-
-
-def test_moon_next_aspect_detects_all_five_aspect_types_over_a_sample():
-    seen_aspects = set()
-    jd = ephemeris.julian_day_ut("2026-01-01", "00:00", 0.0)
-    for i in range(0, 300, 4):
-        result = electional._moon_next_aspect(jd + i / 24)
-        if result is not None:
-            seen_aspects.add(result[1])
-    # Conjunction/opposition use a different detection path (extremum, not
-    # sign-crossing) than sextile/square/trine -- this confirms both paths work.
-    assert "conjunction" in seen_aspects
-    assert "opposition" in seen_aspects
-    assert "trine" in seen_aspects or "sextile" in seen_aspects or "square" in seen_aspects
-
-
-# ---------------------------------------------------------------------------
 # _ordinal
 # ---------------------------------------------------------------------------
 
@@ -777,11 +785,45 @@ def test_scan_days_have_reasons_field(asc_longitude):
             assert len(day["reasons"]) > 0, f"{day['date']} is {day['quality_label']} but has no reasons"
 
 
-def test_scan_best_available_days_have_no_positive_reasons(asc_longitude):
+def test_scan_best_available_days_have_no_positive_reasons_unless_moon_caution(asc_longitude):
+    # A plain Best Available day (no Moon caution) still has empty reasons,
+    # as before. A Best Available day that's actually a moon-caution
+    # downgrade (Moon void/via-combusta) may carry real positive reasons --
+    # the day is capped, not erased, so whatever it would've otherwise
+    # earned is still shown (PTOLEMY_ELECTIONAL_REDESIGN.md Section 2 Task 2).
     result = electional.scan(asc_longitude, "travel", "2026-01-31", "2026-02-09", 0.0)
     for day in result["days"]:
-        if day["quality_label"] == "Best Available":
+        if day["quality_label"] == "Best Available" and day["caution"] is None:
             assert day["reasons"] == []
+
+
+def test_scan_moon_caution_days_are_always_best_available(asc_longitude):
+    # Invariant: whenever a day carries a caution reason, its label must be
+    # capped to Best Available -- the Moon nullifies regardless of what else
+    # the day earned.
+    for theme_key in electional.THEMES:
+        result = electional.scan(asc_longitude, theme_key, "2026-01-01", "2026-03-01", 0.0)
+        for day in result["days"]:
+            if day["caution"] is not None:
+                assert day["quality_label"] == "Best Available", f"{theme_key} {day['date']} {day}"
+
+
+def test_scan_days_always_expose_moon_voc_and_via_combusta_as_booleans(asc_longitude):
+    result = electional.scan(asc_longitude, "love_relationships", "2026-01-01", "2026-01-31", 0.0)
+    assert result["days"], "expected at least one day in this window"
+    for day in result["days"]:
+        assert isinstance(day["moon_voc"], bool)
+        assert isinstance(day["via_combusta"], bool)
+
+
+def test_scan_caution_none_implies_moon_did_not_disqualify(asc_longitude):
+    for theme_key in electional.THEMES:
+        theme = electional.THEMES[theme_key]
+        result = electional.scan(asc_longitude, theme_key, "2026-01-01", "2026-03-01", 0.0)
+        for day in result["days"]:
+            if day["caution"] is None:
+                gated_voc = electional._gated_voc(theme, day["moon_voc"])
+                assert not (gated_voc or day["via_combusta"]), f"{theme_key} {day['date']} {day}"
 
 
 def test_scan_reasons_can_mention_a_dynamic_significator(asc_longitude):
@@ -864,9 +906,7 @@ def test_scan_runs_in_reasonable_time_for_a_year(asc_longitude):
 
 def test_best_available_note_names_dominant_retrograde_planet():
     theme = electional.THEMES["travel"]  # essential_direct = ["Mercury"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 5}, voc_count=0, via_combusta_count=0, malefic_count=0
-    )
+    note = electional._best_available_note(theme, total_days=10, retro_counts={"Mercury": 5}, malefic_count=0)
     assert "Mercury is retrograde" in note
     assert "travel" in note.lower()
 
@@ -874,100 +914,41 @@ def test_best_available_note_names_dominant_retrograde_planet():
 def test_best_available_note_joins_multiple_retrograde_planets():
     theme = electional.THEMES["spiritual_learning"]  # essential_direct = ["Mercury", "Jupiter"]
     note = electional._best_available_note(
-        theme,
-        total_days=10,
-        retro_counts={"Mercury": 5, "Jupiter": 4},
-        voc_count=0,
-        via_combusta_count=0,
-        malefic_count=0,
+        theme, total_days=10, retro_counts={"Mercury": 5, "Jupiter": 4}, malefic_count=0
     )
     assert "Mercury and Jupiter are retrograde" in note
 
 
-def test_best_available_note_voc_dominant_when_no_retrograde():
-    theme = electional.THEMES["travel"]  # essential_moon_not_voc = True
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 0}, voc_count=4, via_combusta_count=0, malefic_count=0
-    )
-    assert "void of course" in note
-
-
-def test_best_available_note_ignores_voc_for_theme_that_does_not_check_it():
-    theme = electional.THEMES["health_body"]  # essential_moon_not_voc = False
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={}, voc_count=9, via_combusta_count=0, malefic_count=0
-    )
-    assert "void of course" not in note
-
-
-def test_best_available_note_via_combusta_dominant_when_no_retrograde_or_voc():
-    theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 0}, voc_count=0, via_combusta_count=4, malefic_count=0
-    )
-    assert "via combusta" in note
-
-
-def test_best_available_note_via_combusta_applies_even_when_theme_ignores_voc():
-    # Unlike voc, via combusta is a universal essential condition -- not
-    # gated by essential_moon_not_voc -- so it must still surface for a
-    # theme that doesn't check void-of-course at all.
-    theme = electional.THEMES["health_body"]  # essential_moon_not_voc = False
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={}, voc_count=0, via_combusta_count=4, malefic_count=0
-    )
-    assert "via combusta" in note
-
-
 def test_best_available_note_malefic_dominant_when_nothing_else_qualifies():
     theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 0}, voc_count=0, via_combusta_count=0, malefic_count=5
-    )
+    note = electional._best_available_note(theme, total_days=10, retro_counts={"Mercury": 0}, malefic_count=5)
     assert "Challenging planetary configurations" in note
 
 
 def test_best_available_note_generic_fallback_when_no_cause_dominates():
     theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 1}, voc_count=1, via_combusta_count=1, malefic_count=1
-    )
+    note = electional._best_available_note(theme, total_days=10, retro_counts={"Mercury": 1}, malefic_count=1)
     assert note == (
         "No strongly favorable configurations exist in this period. The moments below are the best "
         "available — consider extending your search to find stronger support."
     )
 
 
-def test_best_available_note_retrograde_takes_priority_over_voc():
+def test_best_available_note_retrograde_takes_priority_over_malefic():
     theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 5}, voc_count=5, via_combusta_count=0, malefic_count=0
-    )
+    note = electional._best_available_note(theme, total_days=10, retro_counts={"Mercury": 5}, malefic_count=5)
     assert "retrograde" in note
-    assert "void of course" not in note
-
-
-def test_best_available_note_voc_takes_priority_over_via_combusta():
-    theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 0}, voc_count=5, via_combusta_count=5, malefic_count=0
-    )
-    assert "void of course" in note
-    assert "via combusta" not in note
-
-
-def test_best_available_note_via_combusta_takes_priority_over_malefic():
-    theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=10, retro_counts={"Mercury": 0}, voc_count=0, via_combusta_count=5, malefic_count=5
-    )
-    assert "via combusta" in note
     assert "Challenging planetary configurations" not in note
 
 
 def test_best_available_note_handles_zero_scanned_days():
     theme = electional.THEMES["travel"]
-    note = electional._best_available_note(
-        theme, total_days=0, retro_counts={}, voc_count=0, via_combusta_count=0, malefic_count=0
-    )
+    note = electional._best_available_note(theme, total_days=0, retro_counts={}, malefic_count=0)
     assert "best available" in note.lower()
+
+
+# void-of-course and via-combusta used to have branches (and dedicated
+# tests) here too. That logic moved to _moon_caution_text/_moon_caution_note
+# above: a day affected by either no longer falls through to plain "Best
+# Available" at all, so _best_available_note never sees it -- see
+# PTOLEMY_ELECTIONAL_REDESIGN.md Section 2.

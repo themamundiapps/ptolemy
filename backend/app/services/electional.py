@@ -216,12 +216,10 @@ ESSENTIAL_MALEFIC_ORB = 3.0
 # opposite of ordinary combustion, not a milder version of it.
 CAZIMI_ORB = 17 / 60
 
-# Via combusta ("the burnt path"): the Moon between 15 Libra and 15 Scorpio,
-# a classical caution zone traditionally considered to weaken or corrupt her
-# significations — checked as an essential condition for every theme, not
-# gated per-theme the way void-of-course is.
-VIA_COMBUSTA_START = 195.0
-VIA_COMBUSTA_END = 225.0
+# Via combusta is checked as a caution condition for every theme, not gated
+# per-theme the way void-of-course is (see theme["essential_moon_not_voc"]).
+# The calculation itself (and void-of-course's) now lives in ephemeris.py --
+# Transits needs the exact same Moon-state facts, not just electional scans.
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 # Traditional planetary rulers of the days of the week (Chaldean order),
@@ -247,21 +245,6 @@ HOUSE_NAMES = {
 _HOUR = 1 / 24
 _MINUTE = 1 / 1440
 _TOP_DAYS = 5
-
-# Forward-stepping resolution used to determine whether the Moon is void of
-# course: does it perfect a major aspect with any classical planet before it
-# changes sign, checked in 30-minute increments up to 3 days ahead.
-_VOC_STEP = 0.5 / 24
-_VOC_MAX_STEPS = 144
-
-# Sextile/square/trine are detected by a genuine sign-crossing of
-# (separation - aspect_angle) — the aspect actually became exact somewhere
-# in the interval, not merely "close" at one sampled instant. Conjunction
-# (0°) and opposition (180°) sit at the boundary of the folded [0, 180]
-# separation range, so they can never numerically "cross" the way an
-# interior aspect can; they're detected instead as a local closest-approach
-# (a trend reversal) landing within this tight orb.
-_VOC_BOUNDARY_ORB = 1.0
 
 # Forward-stepping resolution used to determine whether a planet-to-house
 # aspect is applying (orb shrinking) or separating (orb growing): sample the
@@ -469,58 +452,6 @@ def jd_to_local_datetime(jd_ut: float, tz_offset: float) -> tuple[str, str]:
     return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
 
-def _moon_next_aspect(jd_ut: float) -> tuple[str, str] | None:
-    """The (planet, aspect_name) the Moon next perfects before changing sign,
-    found by forward-stepping in 30-minute increments (see _VOC_BOUNDARY_ORB
-    above for why conjunction/opposition need a different test than the
-    other three aspects). Returns None if the Moon is void of course (no
-    aspect completes before it leaves its current sign, within a 3-day
-    safety cap)."""
-    moon_id = ephemeris.CLASSICAL_PLANETS["Moon"]
-    other_planets = [(p, b) for p, b in ephemeris.CLASSICAL_PLANETS.items() if p != "Moon"]
-
-    moon_lon, _ = ephemeris.calc_planet(jd_ut, moon_id)
-    sign_index = int(moon_lon // 30)
-
-    prev_sep: dict[str, float] = {}
-    prev_delta: dict[tuple[str, str], float] = {}
-    prev_trend: dict[str, float] = {}
-    for planet, body_id in other_planets:
-        p_lon, _ = ephemeris.calc_planet(jd_ut, body_id)
-        sep = ephemeris.angular_separation(moon_lon, p_lon)
-        prev_sep[planet] = sep
-        for aspect_name, aspect_angle in ephemeris.MAJOR_ASPECTS.items():
-            prev_delta[(planet, aspect_name)] = sep - aspect_angle
-
-    jd = jd_ut
-    for _ in range(_VOC_MAX_STEPS):
-        jd += _VOC_STEP
-        m_lon, _ = ephemeris.calc_planet(jd, moon_id)
-        if int(m_lon // 30) != sign_index:
-            return None
-
-        for planet, body_id in other_planets:
-            p_lon, _ = ephemeris.calc_planet(jd, body_id)
-            sep = ephemeris.angular_separation(m_lon, p_lon)
-            trend = sep - prev_sep[planet]
-            prior_trend = prev_trend.get(planet)
-
-            for aspect_name, aspect_angle in ephemeris.MAJOR_ASPECTS.items():
-                delta = sep - aspect_angle
-                prev = prev_delta[(planet, aspect_name)]
-                if aspect_angle in (0, 180):
-                    if prior_trend is not None and prior_trend * trend < 0 and abs(prev) <= _VOC_BOUNDARY_ORB:
-                        return planet, aspect_name
-                else:
-                    if prev == 0.0 or (prev > 0) != (delta > 0):
-                        return planet, aspect_name
-                prev_delta[(planet, aspect_name)] = delta
-
-            prev_trend[planet] = trend
-            prev_sep[planet] = sep
-    return None
-
-
 def _gather_state(jd_ut: float) -> dict:
     lon: dict[str, float] = {}
     retro: dict[str, bool] = {}
@@ -528,19 +459,13 @@ def _gather_state(jd_ut: float) -> dict:
         l, r = ephemeris.calc_planet(jd_ut, body_id)
         lon[planet] = l
         retro[planet] = r
-    next_aspect = _moon_next_aspect(jd_ut)
+    next_aspect = ephemeris.moon_next_aspect(jd_ut)
     return {
         "lon": lon,
         "retro": retro,
         "moon_voc": next_aspect is None,
         "moon_next_aspect": next_aspect,
     }
-
-
-def _moon_via_combusta(moon_lon: float) -> bool:
-    """True if the Moon is between 15 Libra and 15 Scorpio (195-225 degrees
-    absolute longitude) — the classical "via combusta" caution zone."""
-    return VIA_COMBUSTA_START <= moon_lon < VIA_COMBUSTA_END
 
 
 def _essential_ok(
@@ -573,11 +498,15 @@ def _essential_ok(
         if separation < COMBUSTION_ORB:
             return False
 
-    if theme["essential_moon_not_voc"] and state["moon_voc"]:
-        return False
-
-    if _moon_via_combusta(lon["Moon"]):
-        return False
+    # Void-of-course and via combusta are NOT checked here (they used to be,
+    # as a silent hard exclude) -- see the caution-downgrade logic in scan()
+    # below. A day the Moon renders void/combust no longer vanishes from
+    # results with no explanation; it's shown, capped to "Best Available",
+    # with the reason stated. essential_moon_not_voc still gates whether
+    # THIS theme cares about void-of-course at all (unchanged from before —
+    # see PTOLEMY_ELECTIONAL_REDESIGN.md Section 2, Task 5 for the Health &
+    # Body exemption's unclear provenance); via combusta remains ungated,
+    # same as before.
 
     if theme["essential_moon_not_asc_sign"]:
         moon_sign, _ = ephemeris.sign_and_degree(lon["Moon"])
@@ -732,13 +661,8 @@ def _desirable_ok(theme: dict, state: dict, day: date_cls, cusps: dict[int, floa
 
 # Fraction-of-scanned-days thresholds above which a Best-Available-only
 # result is attributed to that specific cause rather than the generic
-# fallback message (see _best_available_note). Void-of-course's and via
-# combusta's thresholds are lower than the others because even a "normal"
-# period only has the Moon in either condition a modest fraction of the
-# time, so a comparatively smaller excess is already notable.
+# fallback message (see _best_available_note).
 _RETRO_DOMINANT_FRACTION = 0.4
-_VOC_DOMINANT_FRACTION = 0.3
-_VIA_COMBUSTA_DOMINANT_FRACTION = 0.3
 _MALEFIC_DOMINANT_FRACTION = 0.4
 
 
@@ -746,14 +670,16 @@ def _best_available_note(
     theme: dict,
     total_days: int,
     retro_counts: dict[str, int],
-    voc_count: int,
-    via_combusta_count: int,
     malefic_count: int,
 ) -> str:
     """Explains, as specifically as the data allows, why a scan came back
     with only Best Available days — rather than leaving the user with a
     generic "nothing good here" message, name the astrological cause when
-    one clearly dominates the scanned window."""
+    one clearly dominates the scanned window.
+
+    Void-of-course and via combusta used to have branches here too, but a
+    day affected by either no longer lands in plain "Best Available" at
+    all -- see _moon_caution_note and the moon_caution bucket in scan()."""
     if total_days == 0:
         return (
             "No strongly favorable configurations exist in this period. The moments below are the best "
@@ -770,21 +696,62 @@ def _best_available_note(
             "consider extending your search."
         )
 
-    if theme["essential_moon_not_voc"] and voc_count / total_days >= _VOC_DOMINANT_FRACTION:
-        return "The Moon is frequently void of course in this window, limiting favorable configurations. Try a different date range."
-
-    if via_combusta_count / total_days >= _VIA_COMBUSTA_DOMINANT_FRACTION:
-        return (
-            "The Moon is via combusta during much of this period — passing through a traditionally "
-            "inauspicious zone of the zodiac. Consider a different date range."
-        )
-
     if malefic_count / total_days >= _MALEFIC_DOMINANT_FRACTION:
         return "Challenging planetary configurations dominate this period. The moments below are the best available — proceed with awareness."
 
     return (
         "No strongly favorable configurations exist in this period. The moments below are the best "
         "available — consider extending your search to find stronger support."
+    )
+
+
+def _gated_voc(theme: dict, raw_moon_voc: bool) -> bool:
+    """Whether THIS theme treats void-of-course as disqualifying enough to
+    downgrade the day, gated by essential_moon_not_voc. Unlike via combusta
+    (checked for every theme unconditionally — see _moon_caution_text's
+    callers), void-of-course's applicability is theme-dependent, and Health
+    & Body is currently the sole exception (essential_moon_not_voc=False).
+    That exception's provenance is undocumented — see
+    PTOLEMY_ELECTIONAL_REDESIGN.md Section 2 Task 5 — preserved as-is here,
+    not altered."""
+    return raw_moon_voc and theme["essential_moon_not_voc"]
+
+
+def _moon_caution_text(moon_voc: bool, via_combusta: bool) -> str | None:
+    """Plain-language explanation shown on an individual day when the Moon
+    nullifies it — replaces the old silent exclusion. Traditional grounding
+    matches the tone of the existing Mercury-retrograde banner."""
+    if moon_voc and via_combusta:
+        return (
+            "The Moon is void of course and via combusta at this hour. Void of course traditionally "
+            "nullifies the matter outright — Lilly: \"nothing shall come of the thing\" — and via combusta "
+            "compounds it, passing the Moon through a classically inauspicious zone of the zodiac (15° "
+            "Libra–15° Scorpio). Shown for reference only; not a genuine election."
+        )
+    if moon_voc:
+        return (
+            "The Moon is void of course at this hour — it completes no further aspect before leaving its "
+            "sign. Traditional astrology (Lilly) holds that void of course nullifies the matter: \"nothing "
+            "shall come of the thing.\" Shown for reference only; not a genuine election."
+        )
+    if via_combusta:
+        return (
+            "The Moon is via combusta at this hour, passing through a classically inauspicious zone of the "
+            "zodiac (15° Libra–15° Scorpio) traditionally held to weaken or corrupt her significations. "
+            "Shown for reference only; not a genuine election."
+        )
+    return None
+
+
+def _moon_caution_note(theme_label: str) -> str:
+    """Scan-level note when EVERY otherwise-qualifying day in the window is
+    Moon-void or via-combusta — the per-day caution text already explains
+    each individual day; this just orients the user to the pattern."""
+    return (
+        f"Every otherwise-qualifying day for {theme_label.lower()} in this period has the Moon void of "
+        "course or via combusta at its best hour. Traditional astrology holds these moments carry little "
+        "force, but they're shown below with the reason marked rather than hidden. Consider extending your "
+        "search window."
     )
 
 
@@ -820,6 +787,7 @@ def scan(
 
     auspicious: list[dict] = []
     favorable: list[dict] = []
+    moon_caution: list[dict] = []
     best_available: list[dict] = []
     venus_retro_all = True
     mercury_retro_all = True
@@ -829,8 +797,6 @@ def scan(
     # _best_available_note) — never to gate which days qualify.
     total_days_scanned = 0
     retro_counts: dict[str, int] = {p: 0 for p in theme["essential_direct"]}
-    voc_count = 0
-    via_combusta_count = 0
     malefic_count = 0
 
     for day_index in range(n_days):
@@ -863,22 +829,42 @@ def scan(
         for planet in theme["essential_direct"]:
             if state["retro"][planet]:
                 retro_counts[planet] += 1
-        if state["moon_voc"]:
-            voc_count += 1
-        if _moon_via_combusta(state["lon"]["Moon"]):
-            via_combusta_count += 1
         if _malefic_afflicts_priority_houses(theme, state, cusps, hour_start_jd):
             malefic_count += 1
 
         if not _essential_ok(theme, state, cusps, asc_sign, date_str, eclipse_dates, hour_start_jd):
             continue
 
+        # Raw Moon-state facts, exposed on every day regardless of whether
+        # this theme cares (Transits shows these unconditionally too) —
+        # _gated_voc is the theme-aware version that actually caps the
+        # day's label, respecting essential_moon_not_voc same as before.
+        raw_moon_voc = state["moon_voc"]
+        raw_via_combusta = ephemeris.moon_via_combusta(state["lon"]["Moon"])
+        caution_text = _moon_caution_text(_gated_voc(theme, raw_moon_voc), raw_via_combusta)
+
         important_reasons = _important_reasons(theme, state, cusps, hour_start_jd)
         desirable_reasons = _desirable_reasons(theme, state, day_date, cusps)
         auspicious_reasons = _auspicious_reasons(theme, state, cusps, hour_start_jd)
 
-        day_record = {"date": date_str, "hour_start_jd": hour_start_jd, "baseline_counts": baseline_counts}
-        if important_reasons and desirable_reasons and auspicious_reasons:
+        day_record = {
+            "date": date_str,
+            "hour_start_jd": hour_start_jd,
+            "baseline_counts": baseline_counts,
+            "moon_voc": raw_moon_voc,
+            "via_combusta": raw_via_combusta,
+            "caution": caution_text,
+        }
+        if caution_text is not None:
+            # The Moon nullifies the day regardless of what else applies —
+            # Lilly: void of course means "nothing shall come of the thing."
+            # Still surface whatever positive reasons the day would
+            # otherwise have earned, so the caution reads as "this looked
+            # good, but—" rather than erasing that context.
+            moon_caution.append(
+                {**day_record, "reasons": auspicious_reasons or important_reasons or desirable_reasons or []}
+            )
+        elif important_reasons and desirable_reasons and auspicious_reasons:
             auspicious.append({**day_record, "reasons": auspicious_reasons + desirable_reasons})
         elif important_reasons:
             favorable.append({**day_record, "reasons": important_reasons})
@@ -886,10 +872,19 @@ def scan(
             best_available.append({**day_record, "reasons": []})
 
     if auspicious or favorable:
-        selected = [(d, "Auspicious") for d in sorted(auspicious, key=lambda r: r["date"])] + [
-            (d, "Favorable") for d in sorted(favorable, key=lambda r: r["date"])
-        ]
+        # Moon-caution days are appended after the genuine Auspicious/
+        # Favorable results (not hidden the way plain Best Available is) —
+        # they're informative enough to show even when better days exist,
+        # per PTOLEMY_ELECTIONAL_REDESIGN.md Section 2 Task 2.
+        selected = (
+            [(d, "Auspicious") for d in sorted(auspicious, key=lambda r: r["date"])]
+            + [(d, "Favorable") for d in sorted(favorable, key=lambda r: r["date"])]
+            + [(d, "Best Available") for d in sorted(moon_caution, key=lambda r: r["date"])]
+        )
         tier_used = "mixed"
+    elif moon_caution:
+        selected = [(d, "Best Available") for d in sorted(moon_caution, key=lambda r: r["date"])]
+        tier_used = "moon_caution"
     elif best_available:
         selected = [(d, "Best Available") for d in sorted(best_available, key=lambda r: r["date"])]
         tier_used = "best_available"
@@ -922,6 +917,9 @@ def scan(
                 "quality_label": quality_label,
                 "reasons": day_record["reasons"],
                 "hits": best_hits,
+                "moon_voc": day_record["moon_voc"],
+                "via_combusta": day_record["via_combusta"],
+                "caution": day_record["caution"],
             }
         )
 
@@ -944,9 +942,9 @@ def scan(
             "No favorable configurations found in this period. Try extending your search to 60 or 90 days — "
             "the chart may offer stronger support in a later window."
         )
+    elif tier_used == "moon_caution":
+        note = _moon_caution_note(theme["label"])
     elif tier_used == "best_available":
-        note = _best_available_note(
-            theme, total_days_scanned, retro_counts, voc_count, via_combusta_count, malefic_count
-        )
+        note = _best_available_note(theme, total_days_scanned, retro_counts, malefic_count)
 
     return {"days": final, "banner": banner, "note": note}

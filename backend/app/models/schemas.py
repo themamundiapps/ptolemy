@@ -202,6 +202,18 @@ class ElectionalDay(BaseModel):
     quality_label: str
     reasons: list[str]
     hits: list[ElectionalHit]
+    moon_voc: bool = Field(
+        ..., description="Raw fact: is the Moon void of course at this day's best hour, regardless of theme."
+    )
+    via_combusta: bool = Field(
+        ..., description="Raw fact: is the Moon via combusta (15° Libra-15° Scorpio) at this day's best hour."
+    )
+    caution: str | None = Field(
+        None,
+        description="Set when moon_voc or via_combusta caps this day to 'Best Available' regardless of what "
+        "it would otherwise have earned — explains why in plain language. None means the Moon didn't affect "
+        "this day's label (either both are false, or this theme doesn't gate on void-of-course).",
+    )
 
 
 class ElectionalResponse(BaseModel):
@@ -236,6 +248,8 @@ class MoonPosition(BaseModel):
     house: int
     phase_name: str
     phase_angle: float
+    voc: bool = Field(..., description="Void of course right now, by the strict/classical definition.")
+    via_combusta: bool = Field(..., description="Via combusta right now (15° Libra-15° Scorpio).")
 
 
 class TransitsResponse(BaseModel):

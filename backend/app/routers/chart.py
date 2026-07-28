@@ -371,6 +371,8 @@ def get_transits(request: TransitsRequest) -> TransitsResponse:
         house=ephemeris.whole_sign_house(moon_lon, asc_lon),
         phase_name=transits_service.moon_phase_name(phase_angle),
         phase_angle=round(phase_angle, 2),
+        voc=ephemeris.moon_void_of_course(transit_jd_ut),
+        via_combusta=ephemeris.moon_via_combusta(moon_lon),
     )
 
     moon_hits = [t for t in transit_list if t.transiting_planet == "Moon"]

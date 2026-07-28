@@ -53,6 +53,9 @@ def get_electional(request: ElectionalRequest) -> ElectionalResponse:
                 quality_label=r["quality_label"],
                 reasons=r["reasons"],
                 hits=[ElectionalHit(**h) for h in r["hits"]],
+                moon_voc=r["moon_voc"],
+                via_combusta=r["via_combusta"],
+                caution=r["caution"],
             )
         )
 
