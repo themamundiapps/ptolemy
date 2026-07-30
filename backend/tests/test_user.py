@@ -1,11 +1,12 @@
 """Tests for the /api/v1/user/chart save+load endpoints backing Session 9's
 onboarding/persistence feature -- a returning Google sign-in pulls its last
-saved birth data back down from here to recompute the chart."""
+saved birth data back down from here to recompute the chart. Also covers
+/api/v1/user/ai-quota, the read-only lookup of the shared daily AI budget."""
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import user_store
+from app.services import rate_limit, user_store
 
 client = TestClient(app)
 
@@ -72,3 +73,40 @@ def test_works_with_a_real_shaped_google_account_id():
     get_response = client.get(f"/api/v1/user/chart/{real_id}")
     assert get_response.status_code == 200
     assert get_response.json()["city_name"] == payload["city_name"]
+
+
+# ---------------------------------------------------------------------------
+# /api/v1/user/ai-quota
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_rate_limit_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(rate_limit, "_STORE_PATH", tmp_path / "ai_rate_limits.json")
+    yield
+
+
+def test_ai_quota_reports_the_full_limit_for_a_fresh_user():
+    response = client.get("/api/v1/user/ai-quota", params={"user_id": "fresh-user"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"remaining": rate_limit.DAILY_LIMIT, "limit": rate_limit.DAILY_LIMIT, "resets_at": "midnight UTC"}
+
+
+def test_ai_quota_reflects_calls_already_made():
+    rate_limit.check_and_consume("user-1")
+    rate_limit.check_and_consume("user-1")
+    response = client.get("/api/v1/user/ai-quota", params={"user_id": "user-1"})
+    assert response.json()["remaining"] == rate_limit.DAILY_LIMIT - 2
+
+
+def test_ai_quota_works_without_a_user_id():
+    response = client.get("/api/v1/user/ai-quota")
+    assert response.status_code == 200
+    assert response.json()["remaining"] == rate_limit.DAILY_LIMIT
+
+
+def test_ai_quota_does_not_consume_a_unit():
+    for _ in range(5):
+        client.get("/api/v1/user/ai-quota", params={"user_id": "user-1"})
+    assert rate_limit.remaining("user-1") == rate_limit.DAILY_LIMIT

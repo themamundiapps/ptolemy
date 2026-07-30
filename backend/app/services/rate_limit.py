@@ -54,3 +54,19 @@ def check_and_consume(user_id: str | None) -> bool:
         data[user_id] = entry
         _write_all(data)
         return True
+
+
+def remaining(user_id: str | None) -> int:
+    """Read-only lookup of how many AI calls [user_id] has left today --
+    unlike check_and_consume, this never records a call. A missing user_id
+    (same convention as check_and_consume) reports the full limit, since no
+    identifier means no per-user count is tracked for it."""
+    if not user_id:
+        return DAILY_LIMIT
+
+    with _lock:
+        data = _read_all()
+        entry = data.get(user_id)
+        if entry is None or entry.get("date") != _today():
+            return DAILY_LIMIT
+        return max(DAILY_LIMIT - entry["count"], 0)

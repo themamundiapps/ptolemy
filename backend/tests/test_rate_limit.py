@@ -54,3 +54,52 @@ def test_a_new_day_resets_the_count(monkeypatch, tmp_path):
 
     monkeypatch.setattr(rate_limit, "_today", lambda: "2999-01-01")
     assert rate_limit.check_and_consume("user-1") is True
+
+
+# ---------------------------------------------------------------------------
+# remaining() -- read-only, must never consume a unit
+# ---------------------------------------------------------------------------
+
+
+def test_remaining_is_the_full_limit_for_a_user_with_no_calls_yet(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    assert rate_limit.remaining("fresh-user") == rate_limit.DAILY_LIMIT
+
+
+def test_remaining_is_the_full_limit_for_a_missing_user_id(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    assert rate_limit.remaining(None) == rate_limit.DAILY_LIMIT
+
+
+def test_remaining_decreases_as_calls_are_consumed(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    rate_limit.check_and_consume("user-1")
+    rate_limit.check_and_consume("user-1")
+    rate_limit.check_and_consume("user-1")
+    assert rate_limit.remaining("user-1") == rate_limit.DAILY_LIMIT - 3
+
+
+def test_remaining_never_goes_below_zero(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    for _ in range(rate_limit.DAILY_LIMIT):
+        rate_limit.check_and_consume("user-1")
+    rate_limit.check_and_consume("user-1")  # rejected, shouldn't push the count past the limit anyway
+    assert rate_limit.remaining("user-1") == 0
+
+
+def test_remaining_does_not_itself_consume_a_unit(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    rate_limit.remaining("user-1")
+    rate_limit.remaining("user-1")
+    rate_limit.remaining("user-1")
+    assert rate_limit.remaining("user-1") == rate_limit.DAILY_LIMIT
+
+
+def test_remaining_resets_on_a_new_day(monkeypatch, tmp_path):
+    _use_tmp_store(monkeypatch, tmp_path)
+    for _ in range(rate_limit.DAILY_LIMIT):
+        rate_limit.check_and_consume("user-1")
+    assert rate_limit.remaining("user-1") == 0
+
+    monkeypatch.setattr(rate_limit, "_today", lambda: "2999-01-01")
+    assert rate_limit.remaining("user-1") == rate_limit.DAILY_LIMIT
