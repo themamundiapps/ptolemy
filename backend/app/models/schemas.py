@@ -291,6 +291,15 @@ class ChatMessage(BaseModel):
 class ChatAstrologerRequest(ChartRequest):
     messages: list[ChatMessage] = Field(..., min_length=1, description="Full conversation so far, ending in the new user message")
     user_id: str | None = Field(None, description="See ChartAnalysisRequest.user_id")
+    depth: str = Field(
+        "standard",
+        pattern="^(plain|standard|traditional)$",
+        description=(
+            "Register the reply is written in -- doctrine is identical across all three, only how it's "
+            "explained changes. 'plain' explains technical terms as it uses them; 'standard' is the "
+            "default register; 'traditional' uses unglossed technical vocabulary and may cite sources."
+        ),
+    )
 
 
 class ChatAstrologerResponse(BaseModel):

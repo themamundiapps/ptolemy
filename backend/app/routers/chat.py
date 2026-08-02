@@ -59,7 +59,7 @@ def astrologer(request: ChatAstrologerRequest) -> ChatAstrologerResponse:
     conversation = [{"role": m.role, "content": m.content} for m in request.messages]
 
     try:
-        reply = chat.generate_chat_reply(chart_context, conversation)
+        reply = chat.generate_chat_reply(chart_context, conversation, request.depth)
     except chat.ChatError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 

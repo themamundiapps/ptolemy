@@ -85,9 +85,10 @@ def test_context_falls_back_to_none_within_orb_when_no_aspects():
 def test_chat_endpoint_returns_the_generated_reply(monkeypatch):
     captured = {}
 
-    def fake_generate(chart_context: str, messages: list[dict]) -> str:
+    def fake_generate(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
         captured["context"] = chart_context
         captured["messages"] = messages
+        captured["depth"] = depth
         return "Your chart shows a diurnal nativity ruled by the Sun."
 
     monkeypatch.setattr(chat, "generate_chat_reply", fake_generate)
@@ -101,12 +102,13 @@ def test_chat_endpoint_returns_the_generated_reply(monkeypatch):
     # and the conversation history was passed through untouched.
     assert "Ascendant:" in captured["context"]
     assert captured["messages"] == [{"role": "user", "content": "What is my sect?"}]
+    assert captured["depth"] == "standard"
 
 
 def test_chat_endpoint_carries_multi_turn_history_through(monkeypatch):
     captured = {}
 
-    def fake_generate(chart_context: str, messages: list[dict]) -> str:
+    def fake_generate(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
         captured["messages"] = messages
         return "ok"
 
@@ -128,7 +130,7 @@ def test_chat_endpoint_carries_multi_turn_history_through(monkeypatch):
 
 
 def test_chat_endpoint_surfaces_ai_failure_as_503(monkeypatch):
-    def fake_generate(chart_context: str, messages: list[dict]) -> str:
+    def fake_generate(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
         raise chat.ChatError("ANTHROPIC_API_KEY is not configured")
 
     monkeypatch.setattr(chat, "generate_chat_reply", fake_generate)
@@ -156,3 +158,103 @@ def test_chat_endpoint_rejects_invalid_role():
     payload = {**_NATAL_PAYLOAD, "messages": [{"role": "system", "content": "Hello"}]}
     response = client.post("/api/v1/chat/astrologer", json=payload)
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# depth / response register
+# ---------------------------------------------------------------------------
+
+
+def test_chat_endpoint_passes_depth_through_to_generate_chat_reply(monkeypatch):
+    captured = {}
+
+    def fake_generate(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
+        captured["depth"] = depth
+        return "ok"
+
+    monkeypatch.setattr(chat, "generate_chat_reply", fake_generate)
+
+    payload = {**_NATAL_PAYLOAD, "messages": [{"role": "user", "content": "Hello"}], "depth": "traditional"}
+    response = client.post("/api/v1/chat/astrologer", json=payload)
+
+    assert response.status_code == 200
+    assert captured["depth"] == "traditional"
+
+
+def test_chat_endpoint_defaults_depth_to_standard_when_omitted(monkeypatch):
+    captured = {}
+
+    def fake_generate(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
+        captured["depth"] = depth
+        return "ok"
+
+    monkeypatch.setattr(chat, "generate_chat_reply", fake_generate)
+
+    payload = {**_NATAL_PAYLOAD, "messages": [{"role": "user", "content": "Hello"}]}
+    response = client.post("/api/v1/chat/astrologer", json=payload)
+
+    assert response.status_code == 200
+    assert captured["depth"] == "standard"
+
+
+def test_chat_endpoint_rejects_an_unrecognized_depth():
+    payload = {**_NATAL_PAYLOAD, "messages": [{"role": "user", "content": "Hello"}], "depth": "expert"}
+    response = client.post("/api/v1/chat/astrologer", json=payload)
+    assert response.status_code == 422
+
+
+class _FakeMessages:
+    """Stands in for Anthropic's `client.messages`, capturing the kwargs
+    generate_chat_reply actually sent instead of hitting the network --
+    mirrors the module's own `response.content[i].type == "text"` shape."""
+
+    def __init__(self, captured: dict):
+        self._captured = captured
+
+    def create(self, **kwargs):
+        self._captured.update(kwargs)
+        block = type("Block", (), {"type": "text", "text": "ok"})()
+        return type("Response", (), {"content": [block]})()
+
+
+class _FakeAnthropic:
+    def __init__(self, captured: dict):
+        self.messages = _FakeMessages(captured)
+
+
+def _capture_system_prompt(monkeypatch, depth: str | None) -> str:
+    captured: dict = {}
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(chat, "Anthropic", lambda api_key=None: _FakeAnthropic(captured))
+    kwargs = {} if depth is None else {"depth": depth}
+    chat.generate_chat_reply("CONTEXT", [{"role": "user", "content": "hi"}], **kwargs)
+    return captured["system"]
+
+
+def test_generate_chat_reply_standard_depth_leaves_the_prompt_unchanged(monkeypatch):
+    # No `depth` argument at all -- the exact call shape every caller used
+    # before `depth` existed -- must produce the exact prompt it always did.
+    system = _capture_system_prompt(monkeypatch, None)
+    assert system == f"{chat.SYSTEM_PROMPT}\n\nContext:\nCONTEXT"
+
+
+def test_generate_chat_reply_explicit_standard_depth_also_leaves_the_prompt_unchanged(monkeypatch):
+    system = _capture_system_prompt(monkeypatch, "standard")
+    assert system == f"{chat.SYSTEM_PROMPT}\n\nContext:\nCONTEXT"
+
+
+def test_generate_chat_reply_plain_depth_appends_the_plain_register_block(monkeypatch):
+    system = _capture_system_prompt(monkeypatch, "plain")
+    assert system == f"{chat.SYSTEM_PROMPT}\n\nContext:\nCONTEXT\n\n{chat.REGISTER_BLOCKS['plain']}"
+
+
+def test_generate_chat_reply_traditional_depth_appends_the_traditional_register_block(monkeypatch):
+    system = _capture_system_prompt(monkeypatch, "traditional")
+    assert system == f"{chat.SYSTEM_PROMPT}\n\nContext:\nCONTEXT\n\n{chat.REGISTER_BLOCKS['traditional']}"
+
+
+def test_generate_chat_reply_unrecognized_depth_falls_back_to_no_register_block(monkeypatch):
+    # Defensive only -- the schema's pattern already rejects this before it
+    # reaches here, but generate_chat_reply shouldn't crash if it ever did.
+    system = _capture_system_prompt(monkeypatch, "bogus")
+    assert system == f"{chat.SYSTEM_PROMPT}\n\nContext:\nCONTEXT"

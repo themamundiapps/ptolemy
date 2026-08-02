@@ -22,6 +22,31 @@ SYSTEM_PROMPT = (
     'the user in the second person ("your chart shows...").'
 )
 
+# Appended after the chart context (never spliced into SYSTEM_PROMPT itself)
+# for "plain" and "traditional" only -- "standard" is the default register
+# SYSTEM_PROMPT was already written and calibrated for, so its prompt stays
+# byte-for-byte what it was before `depth` existed. Each block governs
+# REGISTER ONLY: identical doctrine, identical facts drawn from the chart
+# context above it -- neither may add, omit, or soften an astrological claim
+# the standard register wouldn't also make.
+REGISTER_BLOCKS = {
+    "plain": (
+        "Register: PLAIN. The reader is new to astrology. When you use a technical term (a dignity, an "
+        "aspect name, a lot, a house condition), briefly explain it in the same sentence or the next one "
+        "-- don't assume it's already understood, and don't silently drop it either. Do not compensate "
+        "for the plain-language explanations by thinning out the astrology itself: this is still a "
+        "grounded reading of this specific chart, not a generic horoscope. Every claim must still trace "
+        "to a specific placement, dignity, or aspect in the context above."
+    ),
+    "traditional": (
+        "Register: TRADITIONAL. The reader already reads Lilly and is fluent in the tradition's "
+        "vocabulary. Use technical terms precisely and without explaining them -- peregrine, cazimi, "
+        "mutual reception, combustion, and the like need no gloss. You may cite the classical sources "
+        "(Ptolemy, Valens, Lilly, Firmicus) by name where it strengthens the point. Do not pad the "
+        "answer with beginner-level exposition it doesn't need."
+    ),
+}
+
 _ASPECT_SYMBOLS = {
     "conjunction": "☌",
     "sextile": "⚹",
@@ -76,12 +101,15 @@ def build_chart_context(
     )
 
 
-def generate_chat_reply(chart_context: str, messages: list[dict]) -> str:
+def generate_chat_reply(chart_context: str, messages: list[dict], depth: str = "standard") -> str:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ChatError("ANTHROPIC_API_KEY is not configured")
 
     system = f"{SYSTEM_PROMPT}\n\nContext:\n{chart_context}"
+    register_block = REGISTER_BLOCKS.get(depth)
+    if register_block:
+        system = f"{system}\n\n{register_block}"
 
     try:
         client = Anthropic(api_key=api_key)
