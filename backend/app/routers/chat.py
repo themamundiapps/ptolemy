@@ -1,14 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.models.schemas import ChatAstrologerRequest, ChatAstrologerResponse
-from app.services import chat, ephemeris, natal, rate_limit
+from app.services import auth, chat, ephemeris, natal, rate_limit
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/astrologer", response_model=ChatAstrologerResponse)
-def astrologer(request: ChatAstrologerRequest) -> ChatAstrologerResponse:
-    if not rate_limit.check_and_consume(request.user_id):
+def astrologer(request: ChatAstrologerRequest, authorization: str | None = Header(None)) -> ChatAstrologerResponse:
+    user_id = auth.resolve_user_id(authorization, request.user_id)
+    if not rate_limit.check_and_consume(user_id):
         raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
 
     try:

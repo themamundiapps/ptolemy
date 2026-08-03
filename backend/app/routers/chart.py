@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.models.schemas import (
     Aspect,
@@ -18,7 +18,7 @@ from app.models.schemas import (
     TransitsResponse,
     ZodiacPosition,
 )
-from app.services import analysis, ephemeris, natal, rate_limit, synastry as synastry_service, temperament
+from app.services import analysis, auth, ephemeris, natal, rate_limit, synastry as synastry_service, temperament
 from app.services import transits as transits_service
 from app.services import timezone as tz_resolver
 
@@ -174,8 +174,11 @@ def get_house_lords(request: ChartRequest) -> HouseLordsResponse:
 
 
 @router.post("/analysis", response_model=ChartAnalysisResponse)
-def get_chart_analysis(request: ChartAnalysisRequest) -> ChartAnalysisResponse:
-    if not rate_limit.check_and_consume(request.user_id):
+def get_chart_analysis(
+    request: ChartAnalysisRequest, authorization: str | None = Header(None)
+) -> ChartAnalysisResponse:
+    user_id = auth.resolve_user_id(authorization, request.user_id)
+    if not rate_limit.check_and_consume(user_id):
         raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
 
     tz_offset = _resolve_tz_offset(request)
@@ -242,8 +245,9 @@ def get_chart_analysis(request: ChartAnalysisRequest) -> ChartAnalysisResponse:
 
 
 @router.post("/synastry", response_model=SynastryResponse)
-def get_synastry(request: SynastryRequest) -> SynastryResponse:
-    if not rate_limit.check_and_consume(request.user_id):
+def get_synastry(request: SynastryRequest, authorization: str | None = Header(None)) -> SynastryResponse:
+    user_id = auth.resolve_user_id(authorization, request.user_id)
+    if not rate_limit.check_and_consume(user_id):
         raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
 
     tz_offset_a = _resolve_tz_offset(request.person_a)
