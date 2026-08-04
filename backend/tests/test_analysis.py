@@ -5,10 +5,11 @@ throughout, matching the project's convention of not hitting a real AI
 provider from the test suite (see services/synthesis.py, left untested for
 the same reason) -- everything short of the network call is fully tested.
 """
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import analysis, rate_limit
+from app.services import analysis, auth, rate_limit
 
 client = TestClient(app)
 
@@ -19,6 +20,14 @@ _NATAL_PAYLOAD = {
     "longitude": -49.2733,
     "tz_offset": -3.0,
 }
+
+
+@pytest.fixture
+def as_pro(monkeypatch):
+    """Chart Analysis is Pro-only (see routers/chart.py) -- every endpoint
+    test below exercises the AI-call wiring, which the Pro gate sits in
+    front of, so they all need to resolve as a Pro caller to reach it."""
+    monkeypatch.setattr(auth, "resolve_plan", lambda authorization, fallback: auth.RequestPlan(fallback, True))
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +115,12 @@ def test_prompt_asks_for_the_five_traditional_sections():
 # ---------------------------------------------------------------------------
 
 
-def test_analysis_endpoint_returns_the_generated_text(monkeypatch):
+def test_analysis_endpoint_rejects_a_free_caller():
+    response = client.post("/api/v1/chart/analysis", json=_NATAL_PAYLOAD)
+    assert response.status_code == 403
+
+
+def test_analysis_endpoint_returns_the_generated_text(as_pro, monkeypatch):
     captured_prompt = {}
 
     def fake_generate(prompt: str) -> str:
@@ -124,7 +138,7 @@ def test_analysis_endpoint_returns_the_generated_text(monkeypatch):
     assert "Sun " in captured_prompt["value"] or "Sun —" in captured_prompt["value"]
 
 
-def test_analysis_endpoint_surfaces_ai_failure_as_503(monkeypatch):
+def test_analysis_endpoint_surfaces_ai_failure_as_503(as_pro, monkeypatch):
     def fake_generate(prompt: str) -> str:
         raise analysis.AnalysisError("ANTHROPIC_API_KEY is not configured")
 
@@ -134,14 +148,14 @@ def test_analysis_endpoint_surfaces_ai_failure_as_503(monkeypatch):
     assert response.status_code == 503
 
 
-def test_analysis_endpoint_rejects_when_rate_limited(monkeypatch):
-    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id: False)
+def test_analysis_endpoint_rejects_when_rate_limited(as_pro, monkeypatch):
+    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id, is_pro=False: False)
     response = client.post("/api/v1/chart/analysis", json={**_NATAL_PAYLOAD, "user_id": "some-user"})
     assert response.status_code == 429
-    assert response.json()["detail"] == rate_limit.LIMIT_MESSAGE
+    assert response.json()["detail"] == rate_limit.limit_message(True)
 
 
-def test_analysis_endpoint_orientality_is_never_set_for_the_sun(monkeypatch):
+def test_analysis_endpoint_orientality_is_never_set_for_the_sun(as_pro, monkeypatch):
     captured_prompt = {}
 
     def fake_generate(prompt: str) -> str:

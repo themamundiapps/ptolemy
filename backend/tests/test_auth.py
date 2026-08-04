@@ -4,7 +4,7 @@ user_id for rate-limit purposes."""
 import jwt
 import pytest
 
-from app.services import auth
+from app.services import auth, subscription
 
 SECRET = "test-secret"
 
@@ -47,3 +47,26 @@ def test_token_without_sub_uses_fallback():
 def test_no_secret_configured_uses_fallback(monkeypatch):
     monkeypatch.setattr(auth, "INTERNAL_AUTH_SECRET", None)
     assert auth.resolve_user_id(f"Bearer {_token()}", "device-abc") == "device-abc"
+
+
+# ---------------------------------------------------------------------------
+# resolve_plan -- (user_id, is_pro) pairing used by every Pro-gated/AI-quota
+# endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_plan_a_guest_is_never_pro():
+    assert auth.resolve_plan(None, "device-abc") == ("device-abc", False)
+
+
+def test_resolve_plan_an_unverified_token_falls_back_to_guest_never_pro():
+    assert auth.resolve_plan(f"Basic {_token()}", "device-abc") == ("device-abc", False)
+
+
+def test_resolve_plan_signed_in_free_account_is_not_pro(test_db):
+    assert auth.resolve_plan(f"Bearer {_token(sub='google-free')}", "device-abc") == ("google-free", False)
+
+
+def test_resolve_plan_signed_in_pro_account_is_pro(test_db):
+    subscription.grant_manual_override("google-123")
+    assert auth.resolve_plan(f"Bearer {_token(sub='google-123')}", "device-abc") == ("google-123", True)

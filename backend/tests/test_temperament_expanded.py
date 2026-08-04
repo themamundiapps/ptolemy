@@ -1,11 +1,17 @@
 """Tests for the expanded Temperament feature: the ptolemy-temperament-expanded.md
 content parser and the /temperament/expanded endpoint that serves it."""
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import interpretations
+from app.services import auth, interpretations
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def as_pro(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_plan", lambda authorization, fallback: auth.RequestPlan(fallback, True))
 
 _ALL_TEMPERAMENTS = [
     "Sanguine",
@@ -94,7 +100,7 @@ def test_mixed_temperament_recommendations_also_parse():
 # ---------------------------------------------------------------------------
 
 
-def test_endpoint_returns_both_sections_for_pure_temperament():
+def test_endpoint_returns_both_sections_for_pure_temperament(as_pro):
     response = client.get("/api/v1/temperament/expanded", params={"temperament": "Sanguine"})
     assert response.status_code == 200
     body = response.json()
@@ -104,7 +110,7 @@ def test_endpoint_returns_both_sections_for_pure_temperament():
     assert body["traditional_recommendations"]["text"]
 
 
-def test_endpoint_returns_both_sections_for_mixed_temperament():
+def test_endpoint_returns_both_sections_for_mixed_temperament(as_pro):
     response = client.get("/api/v1/temperament/expanded", params={"temperament": "Sanguine-Melancholic"})
     assert response.status_code == 200
     body = response.json()
@@ -113,10 +119,19 @@ def test_endpoint_returns_both_sections_for_mixed_temperament():
     assert body["traditional_recommendations"]["text"]
 
 
-def test_endpoint_empty_citation_for_temperament_with_none():
+def test_endpoint_empty_citation_for_temperament_with_none(as_pro):
     response = client.get("/api/v1/temperament/expanded", params={"temperament": "Choleric-Phlegmatic"})
     assert response.status_code == 200
     assert response.json()["health_tendencies"]["citation"] == ""
+
+
+def test_endpoint_omits_recommendations_for_a_free_caller():
+    response = client.get("/api/v1/temperament/expanded", params={"temperament": "Sanguine"})
+    assert response.status_code == 200
+    body = response.json()
+    # Health Tendencies stays free -- only Traditional Recommendations is Pro-gated.
+    assert body["health_tendencies"]["text"]
+    assert body["traditional_recommendations"] is None
 
 
 def test_endpoint_404s_for_unknown_temperament():

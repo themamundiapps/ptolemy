@@ -4,7 +4,7 @@ the migration that creates these; this module is the source of truth for
 """
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -68,8 +68,11 @@ class AiUsage(Base):
 
 
 class Subscription(Base):
-    """Schema placeholder for the upcoming Stripe integration -- no billing
-    logic reads or writes this table yet."""
+    """The billing/entitlement row for a user. Stripe fields are still a
+    placeholder -- no billing logic reads or writes them yet, see
+    services/subscription.py:_stripe_says_pro. `manual_override` is live now:
+    it's the only way to grant Pro before Stripe checkout exists, used for
+    testing and for manual/off-platform sales (see scripts/grant_pro.py)."""
     __tablename__ = "subscriptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -78,6 +81,7 @@ class Subscription(Base):
     stripe_subscription_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    manual_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -32,13 +32,15 @@ def get_chart(google_id: str) -> UserChartResponse:
 @router.get("/ai-quota", response_model=AiQuotaResponse)
 def get_ai_quota(user_id: str | None = None, authorization: str | None = Header(None)) -> AiQuotaResponse:
     """Read-only lookup of the shared daily AI-call budget (Chart Analysis +
-    Synastry + Personal Synthesis combined) -- unlike those endpoints, never
-    consumes a unit itself."""
-    effective_user_id = auth.resolve_user_id(authorization, user_id)
+    Synastry + Chat + Personal Synthesis combined) -- unlike those endpoints,
+    never consumes a unit itself. Also reports is_pro, since the frontend
+    needs it to decide which tabs/themes render locked."""
+    effective_user_id, is_pro = auth.resolve_plan(authorization, user_id)
     return AiQuotaResponse(
-        remaining=rate_limit.remaining(effective_user_id),
-        limit=rate_limit.DAILY_LIMIT,
+        remaining=rate_limit.remaining(effective_user_id, is_pro),
+        limit=rate_limit.daily_limit(is_pro),
         resets_at="midnight UTC",
+        is_pro=is_pro,
     )
 
 

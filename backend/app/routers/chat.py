@@ -8,9 +8,9 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("/astrologer", response_model=ChatAstrologerResponse)
 def astrologer(request: ChatAstrologerRequest, authorization: str | None = Header(None)) -> ChatAstrologerResponse:
-    user_id = auth.resolve_user_id(authorization, request.user_id)
-    if not rate_limit.check_and_consume(user_id):
-        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
+    user_id, is_pro = auth.resolve_plan(authorization, request.user_id)
+    if not rate_limit.check_and_consume(user_id, is_pro):
+        raise HTTPException(status_code=429, detail=rate_limit.limit_message(is_pro))
 
     try:
         tz_offset = natal.resolve_tz_offset(request)

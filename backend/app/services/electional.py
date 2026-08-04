@@ -74,6 +74,8 @@ import swisseph as swe
 
 from app.services import ephemeris
 
+FREE_THEMES = {"love_relationships", "travel"}
+
 THEMES = {
     "love_relationships": {
         "label": "Love & Relationships",

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.schemas import InterpretationResponse, SynthesisRequest, SynthesisResponse
-from app.services import interpretations, rate_limit, synthesis
+from app.services import auth, interpretations, rate_limit, synthesis
 
 router = APIRouter(prefix="/interpretations", tags=["interpretations"])
 
@@ -68,9 +68,10 @@ def transit(
 
 
 @router.post("/synthesis", response_model=SynthesisResponse)
-def generate_synthesis(request: SynthesisRequest) -> SynthesisResponse:
-    if not rate_limit.check_and_consume(request.user_id):
-        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
+def generate_synthesis(request: SynthesisRequest, authorization: str | None = Header(None)) -> SynthesisResponse:
+    user_id, is_pro = auth.resolve_plan(authorization, request.user_id)
+    if not rate_limit.check_and_consume(user_id, is_pro):
+        raise HTTPException(status_code=429, detail=rate_limit.limit_message(is_pro))
 
     try:
         text = synthesis.generate_synthesis(

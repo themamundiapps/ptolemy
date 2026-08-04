@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import auth, rate_limit
+from app.services import auth, rate_limit, subscription
 
 client = TestClient(app)
 
@@ -82,26 +82,42 @@ def test_ai_quota_reports_the_full_limit_for_a_fresh_user(test_db):
     response = client.get("/api/v1/user/ai-quota", params={"user_id": "fresh-user"})
     assert response.status_code == 200
     body = response.json()
-    assert body == {"remaining": rate_limit.DAILY_LIMIT, "limit": rate_limit.DAILY_LIMIT, "resets_at": "midnight UTC"}
+    assert body == {
+        "remaining": rate_limit.FREE_DAILY_LIMIT,
+        "limit": rate_limit.FREE_DAILY_LIMIT,
+        "resets_at": "midnight UTC",
+        "is_pro": False,
+    }
 
 
 def test_ai_quota_reflects_calls_already_made(test_db):
     rate_limit.check_and_consume("user-1")
     rate_limit.check_and_consume("user-1")
     response = client.get("/api/v1/user/ai-quota", params={"user_id": "user-1"})
-    assert response.json()["remaining"] == rate_limit.DAILY_LIMIT - 2
+    assert response.json()["remaining"] == rate_limit.FREE_DAILY_LIMIT - 2
 
 
 def test_ai_quota_works_without_a_user_id(test_db):
     response = client.get("/api/v1/user/ai-quota")
     assert response.status_code == 200
-    assert response.json()["remaining"] == rate_limit.DAILY_LIMIT
+    assert response.json()["remaining"] == rate_limit.FREE_DAILY_LIMIT
 
 
 def test_ai_quota_does_not_consume_a_unit(test_db):
     for _ in range(5):
         client.get("/api/v1/user/ai-quota", params={"user_id": "user-1"})
-    assert rate_limit.remaining("user-1") == rate_limit.DAILY_LIMIT
+    assert rate_limit.remaining("user-1") == rate_limit.FREE_DAILY_LIMIT
+
+
+def test_ai_quota_reports_pro_status_and_the_pro_limit(test_db):
+    subscription.grant_manual_override("google-pro-1")
+    token = "Bearer " + jwt.encode({"sub": "google-pro-1"}, _JWT_SECRET, algorithm="HS256")
+    response = client.get("/api/v1/user/ai-quota", headers={"Authorization": token})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_pro"] is True
+    assert body["limit"] == rate_limit.PRO_DAILY_LIMIT
+    assert body["remaining"] == rate_limit.PRO_DAILY_LIMIT
 
 
 # ---------------------------------------------------------------------------

@@ -177,9 +177,11 @@ def get_house_lords(request: ChartRequest) -> HouseLordsResponse:
 def get_chart_analysis(
     request: ChartAnalysisRequest, authorization: str | None = Header(None)
 ) -> ChartAnalysisResponse:
-    user_id = auth.resolve_user_id(authorization, request.user_id)
-    if not rate_limit.check_and_consume(user_id):
-        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
+    user_id, is_pro = auth.resolve_plan(authorization, request.user_id)
+    if not is_pro:
+        raise HTTPException(status_code=403, detail="Full chart analysis is a Pro feature. Upgrade to Ptolemy Pro to unlock it.")
+    if not rate_limit.check_and_consume(user_id, is_pro):
+        raise HTTPException(status_code=429, detail=rate_limit.limit_message(is_pro))
 
     tz_offset = _resolve_tz_offset(request)
     native = natal.compute_natal(request.date, request.time, request.latitude, request.longitude, tz_offset)
@@ -246,9 +248,11 @@ def get_chart_analysis(
 
 @router.post("/synastry", response_model=SynastryResponse)
 def get_synastry(request: SynastryRequest, authorization: str | None = Header(None)) -> SynastryResponse:
-    user_id = auth.resolve_user_id(authorization, request.user_id)
-    if not rate_limit.check_and_consume(user_id):
-        raise HTTPException(status_code=429, detail=rate_limit.LIMIT_MESSAGE)
+    user_id, is_pro = auth.resolve_plan(authorization, request.user_id)
+    if not is_pro:
+        raise HTTPException(status_code=403, detail="Synastry is a Pro feature. Upgrade to Ptolemy Pro to unlock it.")
+    if not rate_limit.check_and_consume(user_id, is_pro):
+        raise HTTPException(status_code=429, detail=rate_limit.limit_message(is_pro))
 
     tz_offset_a = _resolve_tz_offset(request.person_a)
     tz_offset_b = _resolve_tz_offset(request.person_b)

@@ -141,11 +141,11 @@ def test_chat_endpoint_surfaces_ai_failure_as_503(monkeypatch):
 
 
 def test_chat_endpoint_rejects_when_rate_limited(monkeypatch):
-    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id: False)
+    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id, is_pro=False: False)
     payload = {**_NATAL_PAYLOAD, "messages": [{"role": "user", "content": "Hello"}], "user_id": "some-user"}
     response = client.post("/api/v1/chat/astrologer", json=payload)
     assert response.status_code == 429
-    assert response.json()["detail"] == rate_limit.LIMIT_MESSAGE
+    assert response.json()["detail"] == rate_limit.limit_message(False)
 
 
 def test_chat_endpoint_rejects_empty_message_history():

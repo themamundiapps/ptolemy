@@ -1,16 +1,24 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.models.schemas import ElectionalDay, ElectionalHit, ElectionalRequest, ElectionalResponse
-from app.services import electional, ephemeris
+from app.services import auth, electional, ephemeris
 from app.services import timezone as tz_resolver
 
 router = APIRouter(tags=["electional"])
 
 
 @router.post("/electional", response_model=ElectionalResponse)
-def get_electional(request: ElectionalRequest) -> ElectionalResponse:
+def get_electional(request: ElectionalRequest, authorization: str | None = Header(None)) -> ElectionalResponse:
     if request.theme not in electional.THEMES:
         raise HTTPException(status_code=400, detail=f"Unknown theme: {request.theme}")
+
+    if request.theme not in electional.FREE_THEMES:
+        _user_id, is_pro = auth.resolve_plan(authorization, None)
+        if not is_pro:
+            theme_label = electional.THEMES[request.theme]["label"]
+            raise HTTPException(
+                status_code=403, detail=f"{theme_label} is a Pro theme. Upgrade to Ptolemy Pro to unlock it."
+            )
 
     if request.tz_offset is not None:
         natal_tz_offset = request.tz_offset

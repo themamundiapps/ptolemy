@@ -10,8 +10,11 @@ guests, who were never authenticated to begin with and whose device id was
 always self-reported.
 """
 import os
+from typing import NamedTuple
 
 import jwt
+
+from app.services import subscription
 
 INTERNAL_AUTH_SECRET = os.environ.get("INTERNAL_AUTH_SECRET")
 
@@ -45,3 +48,22 @@ def resolve_user_id(authorization: str | None, fallback_user_id: str | None) -> 
     unauthenticated caller is just treated as a guest, not rejected."""
     identity = resolve_verified_identity(authorization)
     return identity["google_id"] if identity else fallback_user_id
+
+
+class RequestPlan(NamedTuple):
+    user_id: str | None
+    is_pro: bool
+
+
+def resolve_plan(authorization: str | None, fallback_user_id: str | None) -> RequestPlan:
+    """Resolves both the rate-limit key and Pro status for a request in one
+    pass -- the pairing every AI-quota and Pro-gated endpoint needs. Pro
+    status only ever applies to a verified account (see
+    subscription.is_pro): a guest, or a caller presenting no valid internal
+    JWT, is never Pro regardless of what fallback_user_id claims to be --
+    that field is client-supplied and unverified, same as resolve_user_id's
+    guest fallback."""
+    identity = resolve_verified_identity(authorization)
+    if identity:
+        return RequestPlan(identity["google_id"], subscription.is_pro(identity["google_id"]))
+    return RequestPlan(fallback_user_id, False)

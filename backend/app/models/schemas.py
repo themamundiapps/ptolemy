@@ -170,7 +170,9 @@ class TemperamentExpandedRecommendations(BaseModel):
 class TemperamentExpandedResponse(BaseModel):
     temperament: str
     health_tendencies: TemperamentExpandedSection
-    traditional_recommendations: TemperamentExpandedRecommendations
+    traditional_recommendations: TemperamentExpandedRecommendations | None = Field(
+        None, description="Omitted (null) for a free-plan caller -- Traditional Recommendations is Pro-only"
+    )
 
 
 class ElectionalRequest(BaseModel):
@@ -281,6 +283,9 @@ class AiQuotaResponse(BaseModel):
     remaining: int
     limit: int
     resets_at: str
+    is_pro: bool = Field(
+        False, description="Whether this request resolved to a verified Pro account -- drives Pro-gated UI client-side"
+    )
 
 
 class CreateChartRequest(BaseModel):

@@ -3,12 +3,21 @@ prompt-assembly function in services/synastry.py, and the /chart/synastry
 endpoint's wiring (two natal computations -> overlays/aspects -> prompt ->
 AI call). The Anthropic call is monkeypatched throughout, matching the
 project's convention (see test_analysis.py)."""
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services import ephemeris, rate_limit, synastry
+from app.services import auth, ephemeris, rate_limit, synastry
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def as_pro(monkeypatch):
+    """Synastry is Pro-only (see routers/chart.py) -- every endpoint test
+    below exercises the AI-call wiring, which the Pro gate sits in front of,
+    so they all need to resolve as a Pro caller to reach it."""
+    monkeypatch.setattr(auth, "resolve_plan", lambda authorization, fallback: auth.RequestPlan(fallback, True))
 
 _PERSON_A = {
     "name": "Alex",
@@ -217,7 +226,7 @@ def test_prompt_instructs_extra_attention_to_angle_aspects():
 # ---------------------------------------------------------------------------
 
 
-def test_synastry_endpoint_returns_14_house_overlays(monkeypatch):
+def test_synastry_endpoint_returns_14_house_overlays(as_pro, monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
     assert response.status_code == 200
@@ -226,7 +235,7 @@ def test_synastry_endpoint_returns_14_house_overlays(monkeypatch):
     assert {o["from_chart"] for o in body["house_overlays"]} == {"A", "B"}
 
 
-def test_synastry_endpoint_uses_provided_names(monkeypatch):
+def test_synastry_endpoint_uses_provided_names(as_pro, monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
     body = response.json()
@@ -234,7 +243,7 @@ def test_synastry_endpoint_uses_provided_names(monkeypatch):
     assert body["person_b_name"] == "Sam"
 
 
-def test_synastry_endpoint_defaults_names_when_not_given(monkeypatch):
+def test_synastry_endpoint_defaults_names_when_not_given(as_pro, monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     person_a = {**_PERSON_A, "name": None}
     person_b = {**_PERSON_B, "name": None}
@@ -244,14 +253,14 @@ def test_synastry_endpoint_defaults_names_when_not_given(monkeypatch):
     assert body["person_b_name"] == "Native 2"
 
 
-def test_synastry_endpoint_sorts_aspects_by_exactness(monkeypatch):
+def test_synastry_endpoint_sorts_aspects_by_exactness(as_pro, monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
     orbs = [a["orb"] for a in response.json()["aspects"]]
     assert orbs == sorted(orbs)
 
 
-def test_synastry_endpoint_planet_aspects_are_not_flagged_as_angle(monkeypatch):
+def test_synastry_endpoint_planet_aspects_are_not_flagged_as_angle(as_pro, monkeypatch):
     monkeypatch.setattr(synastry, "generate_synastry_analysis", lambda prompt: "A fake reading.")
     monkeypatch.setattr(ephemeris, "find_synastry_angle_aspects", lambda *a, **k: [])
     response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
@@ -259,7 +268,7 @@ def test_synastry_endpoint_planet_aspects_are_not_flagged_as_angle(monkeypatch):
     assert all(a["is_angle"] is False and a["from_chart"] == "A" for a in body["aspects"])
 
 
-def test_synastry_endpoint_merges_angle_aspects_from_both_directions(monkeypatch):
+def test_synastry_endpoint_merges_angle_aspects_from_both_directions(as_pro, monkeypatch):
     # find_synastry_angle_aspects is called twice by the endpoint -- once for
     # A's planets against B's angles, once for B's planets against A's. A
     # call counter distinguishes them without depending on real ephemeris
@@ -286,7 +295,7 @@ def test_synastry_endpoint_merges_angle_aspects_from_both_directions(monkeypatch
     assert orbs == sorted(orbs)
 
 
-def test_synastry_endpoint_surfaces_ai_failure_as_503(monkeypatch):
+def test_synastry_endpoint_surfaces_ai_failure_as_503(as_pro, monkeypatch):
     def fake_generate(prompt: str) -> str:
         raise synastry.SynastryError("ANTHROPIC_API_KEY is not configured")
 
@@ -295,10 +304,15 @@ def test_synastry_endpoint_surfaces_ai_failure_as_503(monkeypatch):
     assert response.status_code == 503
 
 
-def test_synastry_endpoint_rejects_when_rate_limited(monkeypatch):
-    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id: False)
+def test_synastry_endpoint_rejects_when_rate_limited(as_pro, monkeypatch):
+    monkeypatch.setattr(rate_limit, "check_and_consume", lambda user_id, is_pro=False: False)
     response = client.post(
         "/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B, "user_id": "some-user"}
     )
     assert response.status_code == 429
-    assert response.json()["detail"] == rate_limit.LIMIT_MESSAGE
+    assert response.json()["detail"] == rate_limit.limit_message(True)
+
+
+def test_synastry_endpoint_rejects_a_free_caller():
+    response = client.post("/api/v1/chart/synastry", json={"person_a": _PERSON_A, "person_b": _PERSON_B})
+    assert response.status_code == 403

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.schemas import (
     ChartRequest,
@@ -7,7 +7,7 @@ from app.models.schemas import (
     TemperamentExpandedSection,
     TemperamentResponse,
 )
-from app.services import ephemeris, interpretations, temperament
+from app.services import auth, ephemeris, interpretations, temperament
 from app.services import timezone as tz_resolver
 
 router = APIRouter(tags=["temperament"])
@@ -46,12 +46,18 @@ def get_temperament(request: ChartRequest) -> TemperamentResponse:
 
 
 @router.get("/temperament/expanded", response_model=TemperamentExpandedResponse)
-def get_temperament_expanded(temperament: str = Query(...)) -> TemperamentExpandedResponse:
+def get_temperament_expanded(
+    temperament: str = Query(...), authorization: str | None = Header(None)
+) -> TemperamentExpandedResponse:
     entry = interpretations.get_temperament_expanded(temperament)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"No expanded content for temperament '{temperament}'")
+
+    _user_id, is_pro = auth.resolve_plan(authorization, None)
     return TemperamentExpandedResponse(
         temperament=temperament,
         health_tendencies=TemperamentExpandedSection(text=entry.health_text, citation=entry.health_citation),
-        traditional_recommendations=TemperamentExpandedRecommendations(text=entry.recommendations_text),
+        traditional_recommendations=(
+            TemperamentExpandedRecommendations(text=entry.recommendations_text) if is_pro else None
+        ),
     )
