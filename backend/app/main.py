@@ -5,7 +5,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import chart, chat, electional, geocode, interpretations, temperament, user
 
-app = FastAPI(title="Ptolemy API", version="0.1.0")
+# RAILWAY_ENVIRONMENT is injected automatically for every Railway deployment
+# (any environment -- production, staging, PR previews) and is absent when
+# running locally, so this needs no separate config var to opt in. With
+# Stripe integration coming, /docs, /redoc and /openapi.json publishing the
+# full API schema (including billing-adjacent endpoints) is surface worth
+# closing off outside local dev.
+_is_local_dev = os.getenv("RAILWAY_ENVIRONMENT") is None
+
+app = FastAPI(
+    title="Ptolemy API",
+    version="0.1.0",
+    docs_url="/docs" if _is_local_dev else None,
+    redoc_url="/redoc" if _is_local_dev else None,
+    openapi_url="/openapi.json" if _is_local_dev else None,
+)
 
 # The Android/iOS/Windows app talks to this API via native HTTP, which is
 # never subject to browser CORS enforcement -- only the Flutter *web* build
