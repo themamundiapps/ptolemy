@@ -1,34 +1,23 @@
 """Shared daily rate limit for AI-backed endpoints (Chart Analysis, Synastry,
-Personal Synthesis) -- 10 calls per user per day, tracked by whatever
+Chat, Personal Synthesis) -- 10 calls per user per day, tracked by whatever
 identifier the client sends (Google account id, or a locally-generated
-device id for guests). JSON-file-backed for the same reason as
-user_store.py: a single lookup-by-key with no query needs beyond that.
+device id for guests). Backed by the `ai_usage` table (one row per
+subject/day, see models/orm.py); previously a JSON file for the same reason
+-- a single lookup-by-key with no query needs beyond that.
 """
-import json
-from datetime import datetime, timezone
-from pathlib import Path
-from threading import Lock
+from datetime import date, datetime, timezone
 
-_STORE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "ai_rate_limits.json"
-_lock = Lock()
+from sqlalchemy.exc import IntegrityError
+
+from app.db import session_scope
+from app.models.orm import AiUsage
 
 DAILY_LIMIT = 10
 LIMIT_MESSAGE = "Daily analysis limit reached. Your limit resets at midnight."
 
 
-def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-
-def _read_all() -> dict:
-    if not _STORE_PATH.exists():
-        return {}
-    return json.loads(_STORE_PATH.read_text(encoding="utf-8"))
-
-
-def _write_all(data: dict) -> None:
-    _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _STORE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+def _today() -> date:
+    return datetime.now(timezone.utc).date()
 
 
 def check_and_consume(user_id: str | None) -> bool:
@@ -40,19 +29,35 @@ def check_and_consume(user_id: str | None) -> bool:
     if not user_id:
         return True
 
-    with _lock:
-        data = _read_all()
-        today = _today()
-        entry = data.get(user_id)
-        if entry is None or entry.get("date") != today:
-            entry = {"date": today, "count": 0}
+    today = _today()
+    with session_scope() as db:
+        row = (
+            db.query(AiUsage)
+            .filter(AiUsage.subject_id == user_id, AiUsage.window_date == today)
+            .with_for_update(read=False)
+            .one_or_none()
+        )
+        if row is None:
+            try:
+                row = AiUsage(subject_id=user_id, window_date=today, call_count=0)
+                db.add(row)
+                db.flush()
+            except IntegrityError:
+                # Lost a race with a concurrent request for the same
+                # subject/day -- fetch the row it just created instead.
+                db.rollback()
+                row = (
+                    db.query(AiUsage)
+                    .filter(AiUsage.subject_id == user_id, AiUsage.window_date == today)
+                    .one()
+                )
 
-        if entry["count"] >= DAILY_LIMIT:
+        if row.call_count >= DAILY_LIMIT:
+            db.rollback()
             return False
 
-        entry["count"] += 1
-        data[user_id] = entry
-        _write_all(data)
+        row.call_count += 1
+        db.commit()
         return True
 
 
@@ -64,9 +69,12 @@ def remaining(user_id: str | None) -> int:
     if not user_id:
         return DAILY_LIMIT
 
-    with _lock:
-        data = _read_all()
-        entry = data.get(user_id)
-        if entry is None or entry.get("date") != _today():
+    with session_scope() as db:
+        row = (
+            db.query(AiUsage)
+            .filter(AiUsage.subject_id == user_id, AiUsage.window_date == _today())
+            .one_or_none()
+        )
+        if row is None:
             return DAILY_LIMIT
-        return max(DAILY_LIMIT - entry["count"], 0)
+        return max(DAILY_LIMIT - row.call_count, 0)

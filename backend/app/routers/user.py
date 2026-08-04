@@ -1,7 +1,15 @@
 from fastapi import APIRouter, Header, HTTPException
 
-from app.models.schemas import AiQuotaResponse, UserChartResponse, UserChartSaveRequest
-from app.services import auth, rate_limit, user_store
+from app.models.schemas import (
+    AiQuotaResponse,
+    ClaimChartsRequest,
+    ClaimChartsResponse,
+    CreateChartRequest,
+    CreateChartResponse,
+    UserChartResponse,
+    UserChartSaveRequest,
+)
+from app.services import auth, chart_store, rate_limit, user_store
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -32,3 +40,42 @@ def get_ai_quota(user_id: str | None = None, authorization: str | None = Header(
         limit=rate_limit.DAILY_LIMIT,
         resets_at="midnight UTC",
     )
+
+
+@router.post("/charts", response_model=CreateChartResponse)
+def create_chart(request: CreateChartRequest, authorization: str | None = Header(None)) -> CreateChartResponse:
+    """Persists a cast chart so it isn't lost if the browser/device is --
+    called for every chart cast on ptolemy-web, signed in or not. A guest
+    chart (no verified identity on this request) is tagged with
+    [request.guest_id] so it can be claimed later via /user/charts/claim."""
+    identity = auth.resolve_verified_identity(authorization)
+    chart_id = chart_store.create_chart(
+        city_name=request.city_name,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        birth_date=request.date,
+        birth_time=request.time,
+        tz_offset=request.tz_offset,
+        guest_id=request.guest_id,
+        google_id=identity["google_id"] if identity else None,
+    )
+    return CreateChartResponse(id=chart_id)
+
+
+@router.post("/charts/claim", response_model=ClaimChartsResponse)
+def claim_charts(request: ClaimChartsRequest, authorization: str | None = Header(None)) -> ClaimChartsResponse:
+    """Reassigns every chart cast anonymously under [request.guest_id] to
+    the signed-in account making this call. Requires a verified identity --
+    unlike the rate-limit endpoints, this never falls back to treating the
+    caller as a guest, since there'd be nothing meaningful to claim onto."""
+    identity = auth.resolve_verified_identity(authorization)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Sign-in required to claim charts")
+
+    claimed = chart_store.claim_charts_for_guest(
+        guest_id=request.guest_id,
+        google_id=identity["google_id"],
+        email=identity["email"],
+        name=identity["name"],
+    )
+    return ClaimChartsResponse(claimed=claimed)

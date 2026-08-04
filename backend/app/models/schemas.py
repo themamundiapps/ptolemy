@@ -283,6 +283,30 @@ class AiQuotaResponse(BaseModel):
     resets_at: str
 
 
+class CreateChartRequest(BaseModel):
+    city_name: str
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    date: str = Field(..., description="Birth date, format YYYY-MM-DD")
+    time: str = Field(..., description="Birth time, format HH:MM (24h)")
+    tz_offset: float | None = None
+    guest_id: str | None = Field(
+        None, description="Locally-generated device id, used to claim this chart on sign-in if cast while signed out"
+    )
+
+
+class CreateChartResponse(BaseModel):
+    id: int
+
+
+class ClaimChartsRequest(BaseModel):
+    guest_id: str
+
+
+class ClaimChartsResponse(BaseModel):
+    claimed: int
+
+
 class ChatMessage(BaseModel):
     role: str = Field(..., pattern="^(user|assistant)$")
     content: str
