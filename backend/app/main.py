@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chart, chat, electional, geocode, interpretations, temperament, user
+from app.routers import billing, chart, chat, electional, geocode, interpretations, temperament, user
 
 # RAILWAY_ENVIRONMENT is injected automatically for every Railway deployment
 # (any environment -- production, staging, PR previews) and is absent when
@@ -60,6 +60,7 @@ app.include_router(interpretations.router, prefix="/api/v1")
 app.include_router(temperament.router, prefix="/api/v1")
 app.include_router(electional.router, prefix="/api/v1")
 app.include_router(user.router, prefix="/api/v1")
+app.include_router(billing.router, prefix="/api/v1")
 
 
 @app.get("/health")

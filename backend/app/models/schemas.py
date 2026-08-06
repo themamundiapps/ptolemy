@@ -279,6 +279,14 @@ class UserChartResponse(BaseModel):
     tz_offset: float | None = None
 
 
+class CheckoutSessionResponse(BaseModel):
+    url: str
+
+
+class PortalSessionResponse(BaseModel):
+    url: str
+
+
 class AiQuotaResponse(BaseModel):
     remaining: int
     limit: int
