@@ -58,6 +58,28 @@ def test_checkout_session_503s_when_stripe_is_not_configured(monkeypatch):
     assert response.status_code == 503
 
 
+def test_checkout_session_unhandled_stripe_error_still_carries_cors_headers(monkeypatch):
+    """Regression test for the 2026-08-06 incident: an unhandled Stripe
+    exception (here, standing in for the real "Stripe Tax is not supported
+    for your account country" InvalidRequestError) must still come back with
+    CORS headers, or the browser blocks it and the frontend misreports a
+    real 500 as "Could not reach the Ptolemy server" -- see app.main's global
+    exception_handler(Exception)."""
+    import stripe
+
+    def _raise(**kwargs):
+        raise stripe.error.InvalidRequestError("boom", param=None)
+
+    monkeypatch.setattr(stripe.checkout.Session, "create", staticmethod(_raise))
+    response = client.post(
+        "/api/v1/billing/checkout-session",
+        headers={"Authorization": _bearer("google-1"), "Origin": "https://ptolemy-web.vercel.app"},
+    )
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert response.headers["access-control-allow-origin"] == "https://ptolemy-web.vercel.app"
+
+
 def test_checkout_session_returns_a_url_when_signed_in(monkeypatch):
     import stripe
     from types import SimpleNamespace

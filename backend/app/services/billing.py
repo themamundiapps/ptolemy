@@ -52,6 +52,14 @@ def create_checkout_session(google_id: str, email: str | None) -> str:
     if not price_id:
         raise BillingError("STRIPE_PRICE_ID is not configured")
 
+    # Off by default -- the Stripe account is registered in Brazil, and
+    # Stripe Tax does not support Brazil (Session.create raises
+    # InvalidRequestError: "Stripe Tax is not supported for your account
+    # country" if enabled). Revisit -- and set STRIPE_TAX_ENABLED=true on
+    # Railway -- if the account's country ever changes to one Stripe Tax
+    # covers.
+    tax_enabled = os.environ.get("STRIPE_TAX_ENABLED", "false").lower() == "true"
+
     stripe.api_key = _api_key()
     session = stripe.checkout.Session.create(
         mode="subscription",
@@ -63,11 +71,9 @@ def create_checkout_session(google_id: str, email: str | None) -> str:
         cancel_url=f"{FRONTEND_URL}/pricing?checkout=cancelled",
         # International customers means digital-services tax obligations
         # across multiple jurisdictions (EU VAT MOSS, UK VAT, etc.) --
-        # automatic_tax calculates and collects the right one per customer.
-        # Requires Stripe Tax turned on and an origin address set in the
-        # Dashboard (Settings -> Tax); billing_address_collection is
-        # required for Stripe to know which jurisdiction applies.
-        automatic_tax={"enabled": True},
+        # automatic_tax would calculate and collect the right one per
+        # customer, if enabled.
+        automatic_tax={"enabled": tax_enabled},
         billing_address_collection="required",
     )
     return session.url

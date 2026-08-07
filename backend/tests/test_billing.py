@@ -212,8 +212,33 @@ def test_create_checkout_session_returns_the_session_url(monkeypatch):
     assert captured["mode"] == "subscription"
     assert captured["client_reference_id"] == "google-1"
     assert captured["subscription_data"]["metadata"]["google_id"] == "google-1"
-    assert captured["automatic_tax"] == {"enabled": True}
     assert captured["billing_address_collection"] == "required"
+
+
+def test_create_checkout_session_has_tax_disabled_by_default(monkeypatch):
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(url="https://checkout.stripe.com/test-session")
+
+    monkeypatch.delenv("STRIPE_TAX_ENABLED", raising=False)
+    monkeypatch.setattr(stripe.checkout.Session, "create", staticmethod(fake_create))
+    billing.create_checkout_session("google-1", "a@example.com")
+    assert captured["automatic_tax"] == {"enabled": False}
+
+
+def test_create_checkout_session_respects_stripe_tax_enabled_flag(monkeypatch):
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(url="https://checkout.stripe.com/test-session")
+
+    monkeypatch.setenv("STRIPE_TAX_ENABLED", "true")
+    monkeypatch.setattr(stripe.checkout.Session, "create", staticmethod(fake_create))
+    billing.create_checkout_session("google-1", "a@example.com")
+    assert captured["automatic_tax"] == {"enabled": True}
 
 
 def test_create_checkout_session_without_price_id_configured_raises(monkeypatch):
